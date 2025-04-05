@@ -138,6 +138,7 @@ lazy_static::lazy_static! {
 
     };
 
+
 }
 async fn start_message_with_update(bot: Bot, chat_id: ChatId, message_id: MessageId, timestamp: Instant) {
     bot.delete_message(chat_id, message_id).await.expect("Err in delete main message - str 151, UX");
@@ -285,12 +286,16 @@ async fn handle_callback_query(bot: Bot, q: CallbackQuery, conn: Arc<Mutex<Conne
 
 
         } else if data == "get_time_to_N_lesson" {
-            // Create a list of numbers to display in the keyboard
-            let number_buttons: Vec<(String, String)> = (1..=7) // Assuming 7 lessons max
+            // Создаем список номеров, которые будут отображаться на клавиатуре
+            let number_buttons: Vec<(String, String)> = (1..=7) // Предполагаем максимум 7 пар
                 .map(|i| (i.to_string(), format!("lesson_number_{}", i)))
                 .collect();
 
-            let keyboard = create_inline_keyboard(number_buttons);
+            // Добавляем кнопку "Назад"
+            let mut keyboard_buttons = vec![("Назад".to_string(), "back_to_main".to_string())];
+            keyboard_buttons.extend(number_buttons); // Добавляем кнопки с номерами пар
+
+            let keyboard = create_inline_keyboard(keyboard_buttons);
 
             bot.edit_message_text(chat_id, message_id, "Выберите номер пары:")
                 .reply_markup(keyboard)
@@ -310,7 +315,11 @@ async fn handle_callback_query(bot: Bot, q: CallbackQuery, conn: Arc<Mutex<Conne
                             send_to_user_main(result_message, chat_id.0).await;
                         }
                         Err(error_message) => {
-                            bot.send_message(chat_id, error_message).await;
+                            let timestamp  = Instant::now();
+
+                            start_message_with_update(bot.clone(), chat_id, message_id, timestamp).await;
+
+                            send_to_user_main(error_message, chat_id.0).await.unwrap();
                         }
                     }
                     bot.answer_callback_query(q.id).await; // Подтверждаем получение callback

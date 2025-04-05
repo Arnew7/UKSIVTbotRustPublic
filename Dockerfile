@@ -31,14 +31,14 @@ COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 
 # Собираем проект без специфики архитектуры
-#RUN cargo build --release --target aarch64-unknown-linux-gnu
+RUN cargo build --release --target aarch64-unknown-linux-gnu
 # Кросс-компиляция для целевой архитектуры - закомментирована
-RUN cargo build --release
+#RUN cargo build --release
 #RUN cargo build --release
 # Просматриваем содержимое директории релизов
-#RUN ls -la /usr/src/app/target/aarch64-unknown-linux-gnu/release/
+RUN ls -la /usr/src/app/target/aarch64-unknown-linux-gnu/release/
 # Просматриваем содержимое target для aarch64 - закомментировано
-RUN ls -la /usr/src/app/target/release/
+#RUN ls -la /usr/src/app/target/release/
 #RUN ls -la /usr/src/app/target/release/
 # Этап исполнения для aarch64
 FROM ubuntu:22.04 as runner
@@ -61,9 +61,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
 # Копируем исполняемый файл из этапа сборки
-COPY --from=builder /usr/src/app/target/release/UKSIVTbot ./uksivtbot
+#COPY --from=builder /usr/src/app/target/release/UKSIVTbot ./uksivtbot
 # Копируем файл с целевой архитектуры - закомментировано
-# COPY --from=builder /usr/src/app/target/aarch64-unknown-linux-gnu/release/UKSIVTbot ./uksivtbot
+COPY --from=builder /usr/src/app/target/aarch64-unknown-linux-gnu/release/UKSIVTbot ./uksivtbot
 #COPY --from=builder /usr/src/app/target/release/UKSIVTbot ./uksivtbot
 # Переименовываем исполняемый файл
 RUN mv uksivtbot Start

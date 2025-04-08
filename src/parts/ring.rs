@@ -1,8 +1,16 @@
 
-use chrono::{DateTime, Datelike, Duration, Local, NaiveTime, TimeZone, Timelike, Weekday};
+use chrono::{DateTime, Datelike, Duration, Local, NaiveTime, TimeZone, Weekday};
 use std::collections::HashMap;
 
-// Структура для представления времени
+// Константы для дней недели
+const MONDAY: u32 = 1;
+const TUESDAY: u32 = 2;
+const WEDNESDAY: u32 = 3;
+const THURSDAY: u32 = 4;
+const FRIDAY: u32 = 5;
+const SATURDAY: u32 = 6;
+const SUNDAY: u32 = 7;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct LessonTime {
     hour: u32,
@@ -11,13 +19,15 @@ struct LessonTime {
 
 impl LessonTime {
     fn new(hour: u32, minute: u32) -> Self {
+        // Можно добавить валидацию значений hour и minute здесь
         LessonTime { hour, minute }
     }
 }
 
 // Функция для преобразования LessonTime в DateTime<Local>
-fn lesson_time_to_datetime(lesson_time: LessonTime, today: chrono::Date<Local>) -> DateTime<Local> {
-    today.and_hms_opt(lesson_time.hour, lesson_time.minute, 0).unwrap()
+fn lesson_time_to_datetime(lesson_time: LessonTime, today: chrono::Date<Local>) -> Option<DateTime<Local>> {
+    let naive_time = NaiveTime::from_hms_opt(lesson_time.hour, lesson_time.minute, 0)?;
+    Some(today.and_time(naive_time)?)
 }
 
 // Тип для расписания: номер урока -> время
@@ -32,7 +42,7 @@ fn get_hardcoded_schedule() -> (Schedule, DaySchedule, Schedule, DaySchedule) {
     let mut schedule_with_lunch: Schedule = HashMap::new();
     let mut default_schedule_with_lunch: DaySchedule = HashMap::new();
 
-    // Расписание для субботы (weekday 5)
+    // Расписание для субботы (weekday 6)
     let mut saturday_schedule: DaySchedule = HashMap::new();
     saturday_schedule.insert(1, LessonTime::new(8, 0));
     saturday_schedule.insert(2, LessonTime::new(9, 30));
@@ -41,7 +51,7 @@ fn get_hardcoded_schedule() -> (Schedule, DaySchedule, Schedule, DaySchedule) {
     saturday_schedule.insert(5, LessonTime::new(14, 0));
     saturday_schedule.insert(6, LessonTime::new(15, 30));
     saturday_schedule.insert(7, LessonTime::new(17, 0));
-    schedule_with_lunch.insert(6, saturday_schedule); // Corrected to 6, Saturday is 6.
+    schedule_with_lunch.insert(SATURDAY, saturday_schedule); // Subbota is 6.
 
     // Расписание по умолчанию (с обедом)
     default_schedule_with_lunch.insert(1, LessonTime::new(7, 50));
@@ -73,19 +83,22 @@ fn get_hardcoded_schedule() -> (Schedule, DaySchedule, Schedule, DaySchedule) {
     )
 }
 
-// Helper function to calculate the time delta
-async fn calculate_time_delta(lesson_time: LessonTime, today: chrono::Date<Local>) -> Result<(i64, i64), String> {
-    let pair_datetime = lesson_time_to_datetime(lesson_time, today);
-    let now_datetime = Local::now();
-    let delta = pair_datetime.signed_duration_since(now_datetime);
+async fn calculate_time_delta(lesson_time: LessonTime, current_day: chrono::Date<Local>) -> Result<(u64, u64), String> {
+    let lesson_datetime = match lesson_time_to_datetime(lesson_time, current_day) {
+        Some(dt) => dt,
+        None => return Err("Недопустимое время урока".into()),
+    };
 
-    if delta < Duration::zero() {
-        return Err("Пара уже прошла".into());
+    // Calculate the duration until the lesson
+    let now = Local::now();
+    let duration: Duration = lesson_datetime.signed_duration_since(now);
+
+    if duration.num_seconds() < 0 {
+        return Err("Lesson already passed or is ongoing".into());
     }
 
-    let hours = delta.num_hours();
-    let minutes = (delta.num_minutes() % 60) as i64; // Cast to i64
-    let hours = hours as i64;
+    let hours = duration.num_hours() as u64;
+    let minutes = (duration.num_minutes() % 60) as u64;
 
     Ok((hours, minutes))
 }
@@ -97,13 +110,12 @@ pub async fn get_time_delta(n_lesson: u32) -> Result<String, String> {
     let today = Local::today();
     let weekday = today.weekday();
     let weekday_num = weekday.number_from_monday();
+    let is_saturday = weekday == Weekday::Sat;
 
-    // Обработка воскресенья и завтрашнего дня
-    if weekday == Weekday::Sun {
+    // Обработка воскресенья
+    if weekday == Weekday::Sun || (is_saturday && weekday_num == 6) {
+        // Если сегодня воскресенье или завтра воскресенье
         return Err("Сегодня воскресенье, пар нет.".into());
-    } else if weekday == Weekday::Sat && weekday_num == 6 {
-        // Завтра воскресенье
-        return Err("Завтра воскресенье, пар нет.".into());
     }
 
     let ring_with_lunch: &DaySchedule = schedule_with_lunch
@@ -119,69 +131,59 @@ pub async fn get_time_delta(n_lesson: u32) -> Result<String, String> {
     }
 
     let mut result_lines: Vec<String> = Vec::new();
-    let is_saturday = weekday == Weekday::Sat; // Проверяем, является ли сегодня суббота
 
-    let mut with_lunch_result: Option<String> = None;
-    let mut without_lunch_result: Option<String> = None;
-
-    // Проверяем расписание с обедом
-    if let Some(&pair_time_with_lunch) = ring_with_lunch.get(&n_lesson) {
-        match calculate_time_delta(pair_time_with_lunch, today).await {
-            Ok((hours, minutes)) => {
-                let message = format!(
-                    "До начала {}-й пары осталось: {} часов и {} минут.",
-                    n_lesson, hours, minutes
-                );
-                if is_saturday {
-                    // Убрать префикс в субботу
-                    result_lines.push(message);
-                } else {
-                    with_lunch_result = Some(format!("С обедом:  {}", message));
-                }
-            }
-            Err(_) => {
-                result_lines.push(format!("{} пара (с обедом) уже прошла или идёт:", n_lesson));
-            }
-        }
-    }
-
-    // Проверяем расписание без обеда
-    if let Some(&pair_time_without_lunch) = ring_without_lunch.get(&n_lesson) {
-        match calculate_time_delta(pair_time_without_lunch, today).await {
-            Ok((hours, minutes)) => {
-                let message = format!(
-                    "До начала {}-й пары осталось: {} часов и {} минут.",
-                    n_lesson, hours, minutes
-                );
-                if is_saturday {
-                    // Убрать префикс в субботу
-                    if result_lines.is_empty() {
-                        result_lines.push(message);
+    // Helper function
+    async fn process_schedule(
+        n_lesson: u32,
+        schedule: &DaySchedule,
+        schedule_type: &str,
+        today: chrono::Date<Local>,
+        is_saturday: bool,
+    ) -> Option<String> {
+        if let Some(&pair_time) = schedule.get(&n_lesson) {
+            match calculate_time_delta(pair_time, today).await {
+                Ok((hours, minutes)) => {
+                    let message = format!(
+                        "До начала {}-й пары осталось: {} часов и {} минут.",
+                        n_lesson, hours, minutes
+                    );
+                    if is_saturday {
+                        Some(message)
+                    } else {
+                        Some(format!("{}:  {}", schedule_type, message))
                     }
-                } else {
-                    without_lunch_result = Some(format!("Без обеда:  {}", message));
+                }
+                Err(_) => {
+                    Some(format!("{} пара ({}) уже прошла или идёт:", n_lesson, schedule_type))
                 }
             }
-            Err(_) => {
-                result_lines.push(format!("{} пара (без обеда) уже прошла или идёт:", n_lesson));
-            }
+        } else {
+            None
         }
     }
 
-    // Объединяем результаты для обычных дней
-    if !is_saturday {
-        // Используем clone(), чтобы избежать перемещения
-        if let (Some(with_lunch), Some(without_lunch)) = (with_lunch_result.clone(), without_lunch_result.clone()) {
-            if with_lunch == without_lunch {
-                result_lines.push(with_lunch); // Если совпадают, добавляем только один ответ
-            } else {
-                result_lines.push(with_lunch);
-                result_lines.push(without_lunch);
+    let with_lunch_result = process_schedule(n_lesson, ring_with_lunch, "С обедом", today, is_saturday).await;
+    let without_lunch_result = process_schedule(n_lesson, ring_without_lunch, "Без обеда", today, is_saturday).await;
+
+
+    if is_saturday {
+        if let Some(result) = with_lunch_result.or(without_lunch_result) {
+            result_lines.push(result);
+        }
+    } else {
+        match (with_lunch_result, without_lunch_result) {
+            (Some(with_lunch), Some(without_lunch)) => {
+                if with_lunch == without_lunch {
+                    result_lines.push(with_lunch);
+                } else {
+                    result_lines.push(with_lunch);
+                    result_lines.push(without_lunch);
+                }
             }
-        } else if let Some(with_lunch) = with_lunch_result.clone() {
-            result_lines.push(with_lunch);
-        } else if let Some(without_lunch) = without_lunch_result.clone() {
-            result_lines.push(without_lunch);
+            (Some(result), None) | (None, Some(result)) => {
+                result_lines.push(result);
+            }
+            (None, None) => (), // No lesson found
         }
     }
 
@@ -192,8 +194,6 @@ pub async fn get_time_delta(n_lesson: u32) -> Result<String, String> {
     Ok(result_lines.join("\n"))
 }
 
-
-// API 2: Получение времени до следующей пары
 pub async fn get_next_lesson() -> Result<Vec<String>, String> {
     let (schedule_with_lunch, default_schedule_with_lunch, schedule_without_lunch, default_schedule_without_lunch) = get_hardcoded_schedule();
 
@@ -227,84 +227,139 @@ pub async fn get_next_lesson() -> Result<Vec<String>, String> {
             .map(|(&lesson_num, &lesson_time)| (lesson_num, lesson_time))
     }
 
-    // Process with lunch schedule
-    if let Some((lesson_num, lesson_time)) = find_next_lesson(ring_with_lunch, now) {
-        match calculate_time_delta(lesson_time, current_day).await {
-            Ok((hours, minutes)) => {
-                results.push(format!(
-                    "С обедом: До начала {}й пары осталось: {} часов и {} минут.",
-                    lesson_num, hours, minutes
-                ));
-            }
-            Err(_) => { // Изменил на _ чтобы игнорировать ошибку, т.к. сообщение об ошибке не используется
-                results.push(format!("С обедом: {} пара уже прошла или идёт:", lesson_num));
-            }
-        }
-    } else {
-        // No more lessons today, find first lesson tomorrow (or Monday if tomorrow is Sunday)
-        let mut next_day = current_day.succ();
-        let mut next_weekday_num = next_day.weekday().number_from_monday();
+    // Находим следующий урок в обоих расписаниях
+    let next_lesson_with_lunch = find_next_lesson(ring_with_lunch, now);
+    let next_lesson_without_lunch = find_next_lesson(ring_without_lunch, now);
 
-        // Если завтра воскресенье, переходим на понедельник
-        if next_weekday_num == 7 {
-            next_day = next_day.succ();
-            next_weekday_num = next_day.weekday().number_from_monday();
-        }
+    // Обрабатываем уроки
+    match (next_lesson_with_lunch, next_lesson_without_lunch) {
+        (Some((lesson_num_with, lesson_time_with)), Some((lesson_num_without, lesson_time_without))) => {
+            if lesson_time_with == lesson_time_without {
+                // Если время одинаковое, выводим одно сообщение без префикса
+                match calculate_time_delta(lesson_time_with, current_day).await {
+                    Ok((hours, minutes)) => {
+                        results.push(format!(
+                            "До начала {}й пары осталось: {} часов и {} минут.",
+                            lesson_num_with, hours, minutes
+                        ));
+                    }
+                    Err(e) => {
+                        results.push(format!("{} пара уже прошла или идёт: {}", lesson_num_with, e));
+                    }
+                }
+            } else {
+                // Если время разное, выводим сообщения для каждого урока отдельно
+                match calculate_time_delta(lesson_time_with, current_day).await {
+                    Ok((hours, minutes)) => {
+                        results.push(format!(
+                            "С обедом: До начала {}й пары осталось: {} часов и {} минут.",
+                            lesson_num_with, hours, minutes
+                        ));
+                    }
+                    Err(e) => {
+                        results.push(format!("С обедом: {} пара уже прошла или идёт: {}", lesson_num_with, e));
+                    }
+                }
 
-        //Consider both with lunch and without lunch schedules
-        let next_ring_with_lunch = schedule_with_lunch.get(&next_weekday_num).unwrap_or(&default_schedule_with_lunch);
-        let next_ring_without_lunch = schedule_without_lunch.get(&next_weekday_num).unwrap_or(&default_schedule_without_lunch);
-
-        //Find the earliest lesson in both schedules
-        let first_with_lunch = next_ring_with_lunch
-            .iter()
-            .min_by_key(|&(lesson_num, _)| *lesson_num)
-            .map(|(&lesson_num, &lesson_time)| (lesson_num, lesson_time, "c обедом"));
-        let first_without_lunch = next_ring_without_lunch
-            .iter()
-            .min_by_key(|&(lesson_num, _)| *lesson_num)
-            .map(|(&lesson_num, &lesson_time)| (lesson_num, lesson_time, "без обеда"));
-
-        //Determine which schedule has the earliest lesson
-        let next_lesson = match (first_with_lunch, first_without_lunch) {
-            (Some((lesson_num_with, lesson_time_with, label_with)), Some((lesson_num_without, lesson_time_without, label_without))) => {
-                if lesson_time_with < lesson_time_without {
-                    Some((lesson_num_with, lesson_time_with, label_with))
-                } else {
-                    Some((lesson_num_without, lesson_time_without, label_without))
+                match calculate_time_delta(lesson_time_without, current_day).await {
+                    Ok((hours, minutes)) => {
+                        results.push(format!(
+                            "Без обеда: До начала {}й пары осталось: {} часов и {} минут.",
+                            lesson_num_without, hours, minutes
+                        ));
+                    }
+                    Err(e) => {
+                        results.push(format!("Без обеда: {} пара уже прошла или идёт: {}", lesson_num_without, e));
+                    }
                 }
             }
-            (Some((lesson_num, lesson_time, label)), None) => Some((lesson_num, lesson_time, label)),
-            (None, Some((lesson_num, lesson_time, label))) => Some((lesson_num, lesson_time, label)),
-            (None, None) => None, //No lessons tomorrow either
-        };
-
-        if let Some((lesson_num, lesson_time, label)) = next_lesson {
-            match calculate_time_delta(lesson_time, next_day).await {
+        }
+        (Some((lesson_num, lesson_time)), None) => {
+            match calculate_time_delta(lesson_time, current_day).await {
                 Ok((hours, minutes)) => {
-                    results.push(format!("{}: Ближайшая {}я пара будет в понедельник ({}): через {} часов и {} минут.", // Исправлено сообщение на "в понедельник" и добавлено "(понедельник)"
-                                         label, lesson_num, next_day.weekday(), hours, minutes
+                    results.push(format!(
+                        "С обедом: До начала {}й пары осталось: {} часов и {} минут.",
+                        lesson_num, hours, minutes
                     ));
                 }
-                Err(_) => { // Изменил на _ чтобы игнорировать ошибку, т.к. сообщение об ошибке не используется
-                    results.push(format!("{}: {} пара в понедельник уже прошла или идёт.", label, lesson_num)); // Исправлено сообщение на "в понедельник"
+                Err(e) => {
+                    results.push(format!("С обедом: {} пара уже прошла или идёт: {}", lesson_num, e));
                 }
             }
-        } else {
-            results.push("На следующей неделе пар нет!".to_string()); // Сообщение если нет пар на следующей неделе.
         }
+        (None, Some((lesson_num, lesson_time))) => {
+            match calculate_time_delta(lesson_time, current_day).await {
+                Ok((hours, minutes)) => {
+                    results.push(format!(
+                        "Без обеда: До начала {}й пары осталось: {} часов и {} минут.",
+                        lesson_num, hours, minutes
+                    ));
+                }
+                Err(e) => {
+                    results.push(format!("Без обеда: {} пара уже прошла или идёт: {}", lesson_num, e));
+                }
+            }
+        }
+        (None, None) => { // Если уроков сегодня больше нет, ищем первый урок на следующий день
+            let mut next_day = current_day.succ();
+            let mut next_weekday_num = next_day.weekday().number_from_monday();
+
+            // Если завтра воскресенье, переходим на понедельник
+            if next_weekday_num == 7 {
+                next_day = next_day.succ();
+                next_weekday_num = next_day.weekday().number_from_monday();
+            }
+
+            let next_ring_with_lunch = schedule_with_lunch.get(&next_weekday_num).unwrap_or(&default_schedule_with_lunch);
+            let next_ring_without_lunch = schedule_without_lunch.get(&next_weekday_num).unwrap_or(&default_schedule_without_lunch);
+
+            let first_with_lunch = next_ring_with_lunch
+                .iter()
+                .min_by_key(|&(lesson_num, _)| *lesson_num)
+                .map(|(&lesson_num, &lesson_time)| (lesson_num, lesson_time, "c обедом"));
+
+            let first_without_lunch = next_ring_without_lunch
+                .iter()
+                .min_by_key(|&(lesson_num, _)| *lesson_num)
+                .map(|(&lesson_num, &lesson_time)| (lesson_num, lesson_time, "без обеда"));
+
+            // Сравниваем первый урок в обоих расписаниях и выбираем ближайший
+            match (first_with_lunch, first_without_lunch) {
+                (Some((lesson_num_lunch, lesson_time_lunch, _)), Some((lesson_num_no_lunch, lesson_time_no_lunch, _))) => {
+                    // Сравниваем времена начала уроков и выбираем ближайший
+                    let time_lunch = NaiveTime::from_hms(lesson_time_lunch.hour, lesson_time_lunch.minute, 0);
+                    let time_no_lunch = NaiveTime::from_hms(lesson_time_no_lunch.hour, lesson_time_no_lunch.minute, 0);
+
+                    if time_lunch <= time_no_lunch {
+                        results.push(format!(
+                            "Завтра (с обедом): Первая пара {} в {}:{:02}.",
+                            lesson_num_lunch, lesson_time_lunch.hour, lesson_time_lunch.minute
+                        ));
+                    } else {
+                        results.push(format!(
+                            "Завтра (без обеда): Первая пара {} в {}:{:02}.",
+                            lesson_num_no_lunch, lesson_time_no_lunch.hour, lesson_time_no_lunch.minute
+                        ));
+                    }
+                }
+                (Some((lesson_num, lesson_time, _)), None) => results.push(format!(
+                    "Завтра (с обедом): Первая пара {} в {}:{:02}.",
+                    lesson_num, lesson_time.hour, lesson_time.minute
+                )),
+                (None, Some((lesson_num, lesson_time, _))) => results.push(format!(
+                    "Завтра (без обеда): Первая пара {} в {}:{:02}.",
+                    lesson_num, lesson_time.hour, lesson_time.minute
+                )),
+                (None, None) => results.push("Завтра уроков нет.".to_string()),
+            }
+        }
+    }
+
+    if results.is_empty() {
+        results.push("Уроков на сегодня больше нет".to_string());
     }
 
     Ok(results)
 }
 
-// Функция обработки ввода номера пары пользователем
-pub async fn w_lesson(user_input: &str) -> Result<String, String> {
-    match user_input.parse::<u32>() {
-        Ok(n_lesson) => {
-            let time_delta = get_time_delta(n_lesson).await;
-            time_delta
-        }
-        Err(_) => Err("Пожалуйста, введите корректное число.".into()),
-    }
-}
+

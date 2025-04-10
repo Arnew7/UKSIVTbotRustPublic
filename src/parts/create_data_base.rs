@@ -13,10 +13,9 @@ pub(crate) async fn create_database() -> Result<()> {
 
     conn.execute(
         "CREATE TABLE IF NOT EXISTS info_users (
-            user_id INTEGER PRIMARY KEY,
+            chat_id INTEGER PRIMARY KEY,
             group_inf TEXT DEFAULT '23веб-1',
-            username TEXT DEFAULT NULL,
-            save_time INTEGER DEFAULT 30000 -- 5:00 в секундах
+            username TEXT DEFAULT NULL
         )",
         [],
     )?;

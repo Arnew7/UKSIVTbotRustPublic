@@ -15,7 +15,7 @@ use chrono::{NaiveDateTime, Timelike};
 use teloxide::payloads::SendMessageSetters;
 use rusqlite::Connection;
 use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup, MessageId};
-use crate::parts::database::{get_group_by_user_id};
+use crate::parts::database::{get_group_by_chat_id};
 use crate::parts::memcached::get_from_memcached;
 use crate::parts::send_to_user::send_to_user_main;
 use super::ring::{get_next_lesson, get_time_delta};
@@ -154,7 +154,7 @@ async fn start_message_with_update(bot: Bot, chat_id: ChatId, message_id: Messag
         }
     }
 async fn start_message(bot: Bot, chat_id: ChatId, timestamp: Instant) {
-    let group = get_group_by_user_id(chat_id.0);
+    let group = get_group_by_chat_id(chat_id.0);
 
     let keyboard = create_inline_keyboard(
         MAIN.iter().map(|(text, callback)| (text.to_string(), callback.to_string())).collect()
@@ -277,16 +277,14 @@ async fn handle_callback_query(bot: Bot, q: CallbackQuery, conn: Arc<Mutex<Conne
             let direction_ = GROUPS.iter().find_map(|(d, groups)| if groups.contains(&group) { Some(d) } else { None }).map_or("", |v| v);
             let _ = DIRECTIONS.iter().find_map(|(y, dirs)| if dirs.contains(&direction_.to_string()) { Some(y) } else { None }).map_or("", |v| v);
 
-            update_user_info(user_id.0, group.to_string(), username, conn.clone()).await?;
-            let chat_id = q.from.id;
-            let group = get_group_by_user_id(chat_id.0 as i64);
-            let replace = get_from_memcached(group).await.unwrap();
-            let message_text = format!("Главная:\nЗамены \n {}", replace);
+            update_user_info(chat_id.0, group.to_string(), username, conn.clone()).await?;
+            println!("{}",&chat_id);
 
-            bot.edit_message_text(chat_id, message_id, message_text)
-                .reply_markup(keyboard)
-                .await
-                .with_context(|| format!("Failed to send message to chat ID: {}", chat_id))?;
+            let group = get_group_by_chat_id(chat_id.0);
+            let _ = get_from_memcached(group).await.unwrap();
+            let timestamp  = Instant::now();
+
+            start_message_with_update(bot, chat_id, message_id, timestamp).await;
 
             println!("Message sending (UX)");
 
@@ -389,7 +387,7 @@ fn create_inline_keyboard_with_back(buttons: Vec<(String, String)>, back_callbac
 
 
 async fn run() -> AsyncResult<()> {
-    let bot_token: &str  = TEST_BOT_TOKEN;
+    let bot_token: &str  = PRODUCTION_BOT_TOKEN;
     let bot = Bot::new(bot_token);
     let db_path = "Database.db";
     let conn = Arc::new(Mutex::new(create_connection(db_path)?));

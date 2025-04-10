@@ -327,29 +327,69 @@ pub async fn get_next_lesson() -> Result<Vec<String>, String> {
             match (first_with_lunch, first_without_lunch) {
                 (Some((lesson_num_lunch, lesson_time_lunch, _)), Some((lesson_num_no_lunch, lesson_time_no_lunch, _))) => {
                     // Сравниваем времена начала уроков и выбираем ближайший
-                    let time_lunch = NaiveTime::from_hms(lesson_time_lunch.hour, lesson_time_lunch.minute, 0);
-                    let time_no_lunch = NaiveTime::from_hms(lesson_time_no_lunch.hour, lesson_time_no_lunch.minute, 0);
+                    let time_lunch = NaiveTime::from_hms_opt(lesson_time_lunch.hour, lesson_time_lunch.minute, 0).unwrap();
+                    let time_no_lunch = NaiveTime::from_hms_opt(lesson_time_no_lunch.hour, lesson_time_no_lunch.minute, 0).unwrap();
 
-                    if time_lunch <= time_no_lunch {
+                    let now = Local::now().time();
+
+                    let duration_lunch = if time_lunch > now {
+                        time_lunch - now
+                    } else {
+                        // Если урок уже прошел сегодня, считаем разницу до завтрашнего урока
+                        time_lunch + chrono::Duration::hours(24) - now
+                    };
+
+                    let duration_no_lunch = if time_no_lunch > now {
+                        time_no_lunch - now
+                    } else {
+                        // Если урок уже прошел сегодня, считаем разницу до завтрашнего урока
+                        time_no_lunch + chrono::Duration::hours(24) - now
+                    };
+
+
+                    if duration_lunch <= duration_no_lunch {
                         results.push(format!(
-                            "Завтра (с обедом): Первая пара {} в {}:{:02}.",
-                            lesson_num_lunch, lesson_time_lunch.hour, lesson_time_lunch.minute
+                            "Завтра (с обедом): Первая пара {} через {} ч {} мин.",
+                            lesson_num_lunch, duration_lunch.num_hours(), duration_lunch.num_minutes() % 60
                         ));
                     } else {
                         results.push(format!(
-                            "Завтра (без обеда): Первая пара {} в {}:{:02}.",
-                            lesson_num_no_lunch, lesson_time_no_lunch.hour, lesson_time_no_lunch.minute
+                            "Завтра (без обеда): Первая пара {} через {} ч {} мин.",
+                            lesson_num_no_lunch, duration_no_lunch.num_hours(), duration_no_lunch.num_minutes() % 60
                         ));
                     }
                 }
-                (Some((lesson_num, lesson_time, _)), None) => results.push(format!(
-                    "Завтра (с обедом): Первая пара {} в {}:{:02}.",
-                    lesson_num, lesson_time.hour, lesson_time.minute
-                )),
-                (None, Some((lesson_num, lesson_time, _))) => results.push(format!(
-                    "Завтра (без обеда): Первая пара {} в {}:{:02}.",
-                    lesson_num, lesson_time.hour, lesson_time.minute
-                )),
+                (Some((lesson_num, lesson_time, _)), None) => {
+                    let time = NaiveTime::from_hms_opt(lesson_time.hour, lesson_time.minute, 0).unwrap();
+                    let now = Local::now().time();
+
+                    let duration = if time > now {
+                        time - now
+                    } else {
+                        time + chrono::Duration::hours(24) - now
+                    };
+
+
+                    results.push(format!(
+                        "Завтра: Первая пара {} через {} ч {} мин.",
+                        lesson_num, duration.num_hours(), duration.num_minutes() % 60
+                    ))
+                }
+                (None, Some((lesson_num, lesson_time, _))) => {
+                    let time = NaiveTime::from_hms_opt(lesson_time.hour, lesson_time.minute, 0).unwrap();
+                    let now = Local::now().time();
+
+                    let duration = if time > now {
+                        time - now
+                    } else {
+                        time + chrono::Duration::hours(24) - now
+                    };
+
+                    results.push(format!(
+                        "Завтра (без обеда): Первая пара {} через {} ч {} мин.",
+                        lesson_num, duration.num_hours(), duration.num_minutes() % 60
+                    ))
+                }
                 (None, None) => results.push("Завтра уроков нет.".to_string()),
             }
         }

@@ -16,10 +16,9 @@ pub fn create_connection(db_path: &str) -> Result<Connection> {
     let conn = Connection::open(db_path)?;
     conn.execute(
         "CREATE TABLE IF NOT EXISTS info_users (
-            user_id INTEGER PRIMARY KEY,
+            chat_id INTEGER PRIMARY KEY,
             group_inf TEXT DEFAULT '23веб-1',
-            username TEXT DEFAULT NULL,
-            save_time INTEGER DEFAULT 30000 -- 5:00 в секундах
+            username TEXT DEFAULT NULL
         )",
         [],
     )?;
@@ -32,30 +31,30 @@ pub fn create_connection(db_path: &str) -> Result<Connection> {
 
 
 // Асинхронная функция для обновления данных пользователя
-pub async fn update_user_info(user_id: u64, group: String, username: Option<String>, conn: Arc<Mutex<Connection>>,) -> Result<()> {
+pub async fn update_user_info(chat_id: i64, group: String, username: Option<String>, conn: Arc<Mutex<Connection>>,) -> Result<()> {
     let conn = conn.lock().await;
     let mut stmt = conn.prepare(
-        "INSERT OR REPLACE INTO info_users (user_id, group_inf, username) VALUES (?, ?, ?)",
+        "INSERT OR REPLACE INTO info_users (chat_id, group_inf, username) VALUES (?, ?, ?)",
     )?;
-    stmt.execute(params![user_id, group, username])?;
+    stmt.execute(params![chat_id, group, username])?;
     Ok(())
 }
 
-pub async fn reg_user_info(user_id: u64, username: Option<String>, conn: Arc<Mutex<Connection>>,) -> Result<()> {
+pub async fn reg_user_info(chat_id: i64, username: Option<String>, conn: Arc<Mutex<Connection>>,) -> Result<()> {
     let conn = conn.lock().await;
     let mut stmt = conn.prepare(
-        "INSERT OR REPLACE INTO info_users (user_id, username) VALUES (?, ?)",
+        "INSERT OR REPLACE INTO info_users (chat_id, username) VALUES (?, ?)",
     )?;
-    stmt.execute(params![user_id, username])?;
+    stmt.execute(params![chat_id, username])?;
     Ok(())
 }
 
-pub fn get_group_by_user_id(user_id: i64) -> String {
+pub fn get_group_by_chat_id(chat_id: i64) -> String {
     match Connection::open("Database.db") {
         Ok(conn) => {
             match conn.query_row(
-                "SELECT group_inf FROM info_users WHERE user_id = ?",
-                params![user_id],
+                "SELECT group_inf FROM info_users WHERE chat_id = ?",
+                params![chat_id],
                 |row| row.get::<_, String>(0),
             ) {
                 Ok(group) => group,
@@ -82,7 +81,7 @@ pub struct User {
 
 pub fn get_all_users() -> Result<Vec<User>> {
     let conn = Connection::open("Database.db")?;
-    let mut stmt = conn.prepare("SELECT user_id, group_inf, username FROM info_users")?;
+    let mut stmt = conn.prepare("SELECT chat_id, group_inf, username FROM info_users")?;
     let user_iter = stmt.query_map([], |row| {
         Ok(User {
             id: row.get(0)?,
@@ -111,7 +110,7 @@ pub struct User_Group {
 
 pub fn get_user_and_group() -> Result<Vec<User_Group>, RusqliteError> {
     let conn = Connection::open("Database.db")?;
-    let mut stmt = conn.prepare("SELECT user_id, group_inf FROM info_users")?;
+    let mut stmt = conn.prepare("SELECT chat_id, group_inf FROM info_users")?;
     let user_iter = stmt.query_map([], |row| {
         Ok(User_Group {
             id: row.get(0)?,

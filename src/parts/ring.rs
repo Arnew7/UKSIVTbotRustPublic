@@ -113,18 +113,30 @@ pub async fn get_time_delta(n_lesson: u32) -> Result<String, String> {
     let is_saturday = weekday == Weekday::Sat;
 
     // Обработка воскресенья
-    if weekday == Weekday::Sun || (is_saturday && weekday_num == 6) {
+    if weekday == Weekday::Sun{
         // Если сегодня воскресенье или завтра воскресенье
         return Err("Сегодня воскресенье, пар нет.".into());
     }
 
-    let ring_with_lunch: &DaySchedule = schedule_with_lunch
-        .get(&weekday_num)
-        .unwrap_or(&default_schedule_with_lunch);
+    let ring_with_lunch: &DaySchedule = if is_saturday {
+        schedule_with_lunch
+            .get(&weekday_num)
+            .unwrap_or(&default_schedule_with_lunch) // Используем расписание с обедом для субботы
+    } else {
+        schedule_with_lunch
+            .get(&weekday_num)
+            .unwrap_or(&default_schedule_with_lunch)
+    };
 
-    let ring_without_lunch: &DaySchedule = schedule_without_lunch
-        .get(&weekday_num)
-        .unwrap_or(&default_schedule_without_lunch);
+    let ring_without_lunch: &DaySchedule =  if is_saturday {
+        &default_schedule_without_lunch // Используем расписание без обеда для субботы
+    } else {
+        schedule_without_lunch
+            .get(&weekday_num)
+            .unwrap_or(&default_schedule_without_lunch)
+    };
+
+
 
     if !ring_with_lunch.contains_key(&n_lesson) && !ring_without_lunch.contains_key(&n_lesson) {
         return Err("Некорректный номер пары.".into());
@@ -138,7 +150,6 @@ pub async fn get_time_delta(n_lesson: u32) -> Result<String, String> {
         schedule: &DaySchedule,
         schedule_type: &str,
         today: chrono::Date<Local>,
-        is_saturday: bool,
     ) -> Option<String> {
         if let Some(&pair_time) = schedule.get(&n_lesson) {
             match calculate_time_delta(pair_time, today).await {
@@ -147,11 +158,9 @@ pub async fn get_time_delta(n_lesson: u32) -> Result<String, String> {
                         "До начала {}-й пары осталось: {} часов и {} минут.",
                         n_lesson, hours, minutes
                     );
-                    if is_saturday {
-                        Some(message)
-                    } else {
-                        Some(format!("{}:  {}", schedule_type, message))
-                    }
+
+                    Some(format!("{}:  {}", schedule_type, message))
+
                 }
                 Err(_) => {
                     Some(format!("{} пара ({}) уже прошла или идёт:", n_lesson, schedule_type))
@@ -162,12 +171,12 @@ pub async fn get_time_delta(n_lesson: u32) -> Result<String, String> {
         }
     }
 
-    let with_lunch_result = process_schedule(n_lesson, ring_with_lunch, "С обедом", today, is_saturday).await;
-    let without_lunch_result = process_schedule(n_lesson, ring_without_lunch, "Без обеда", today, is_saturday).await;
+    let with_lunch_result = process_schedule(n_lesson, ring_with_lunch, "С обедом", today).await;
+    let without_lunch_result = process_schedule(n_lesson, ring_without_lunch, "Без обеда", today).await;
 
 
     if is_saturday {
-        if let Some(result) = with_lunch_result.or(without_lunch_result) {
+        if let Some(result) = with_lunch_result {
             result_lines.push(result);
         }
     } else {
@@ -220,7 +229,7 @@ pub async fn get_next_lesson() -> Result<Vec<String>, String> {
         ring.iter()
             .filter(|(_, &lesson_time)| {
                 NaiveTime::from_hms_opt(lesson_time.hour, lesson_time.minute, 0).map_or(false, |lesson_time_naive| {
-                    now < lesson_time_naive
+                    now <= lesson_time_naive // Use <= instead of <
                 })
             })
             .min_by_key(|&(lesson_num, _)| *lesson_num)
@@ -330,23 +339,25 @@ pub async fn get_next_lesson() -> Result<Vec<String>, String> {
                     let time_lunch = NaiveTime::from_hms_opt(lesson_time_lunch.hour, lesson_time_lunch.minute, 0).unwrap();
                     let time_no_lunch = NaiveTime::from_hms_opt(lesson_time_no_lunch.hour, lesson_time_no_lunch.minute, 0).unwrap();
 
+                    // Получаем текущее время
                     let now = Local::now().time();
 
-                    let duration_lunch = if time_lunch > now {
+                    // Вычисляем продолжительность до начала каждого урока
+                    let duration_lunch = if time_lunch >= now {
                         time_lunch - now
                     } else {
                         // Если урок уже прошел сегодня, считаем разницу до завтрашнего урока
-                        time_lunch + chrono::Duration::hours(24) - now
+                        (time_lunch + chrono::Duration::hours(24)) - now
                     };
 
-                    let duration_no_lunch = if time_no_lunch > now {
+                    let duration_no_lunch = if time_no_lunch >= now {
                         time_no_lunch - now
                     } else {
                         // Если урок уже прошел сегодня, считаем разницу до завтрашнего урока
-                        time_no_lunch + chrono::Duration::hours(24) - now
+                        (time_no_lunch + chrono::Duration::hours(24)) - now
                     };
 
-
+                    // Сравниваем продолжительности и выбираем ближайший урок
                     if duration_lunch <= duration_no_lunch {
                         results.push(format!(
                             "Завтра (с обедом): Первая пара {} через {} ч {} мин.",
@@ -363,26 +374,25 @@ pub async fn get_next_lesson() -> Result<Vec<String>, String> {
                     let time = NaiveTime::from_hms_opt(lesson_time.hour, lesson_time.minute, 0).unwrap();
                     let now = Local::now().time();
 
-                    let duration = if time > now {
+                    let duration = if time >= now {
                         time - now
                     } else {
-                        time + chrono::Duration::hours(24) - now
+                        (time + chrono::Duration::hours(24)) - now
                     };
 
-
                     results.push(format!(
-                        "Завтра: Первая пара {} через {} ч {} мин.",
+                        "Завтра (с обедом): Первая пара {} через {} ч {} мин.",
                         lesson_num, duration.num_hours(), duration.num_minutes() % 60
-                    ))
+                    ));
                 }
                 (None, Some((lesson_num, lesson_time, _))) => {
                     let time = NaiveTime::from_hms_opt(lesson_time.hour, lesson_time.minute, 0).unwrap();
                     let now = Local::now().time();
 
-                    let duration = if time > now {
+                    let duration = if time >= now {
                         time - now
                     } else {
-                        time + chrono::Duration::hours(24) - now
+                        (time + chrono::Duration::hours(24)) - now
                     };
 
                     results.push(format!(
@@ -401,5 +411,3 @@ pub async fn get_next_lesson() -> Result<Vec<String>, String> {
 
     Ok(results)
 }
-
-

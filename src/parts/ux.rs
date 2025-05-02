@@ -387,7 +387,7 @@ fn create_inline_keyboard_with_back(buttons: Vec<(String, String)>, back_callbac
 
 
 async fn run() -> AsyncResult<()> {
-    let bot_token: &str  = PRODUCTION_BOT_TOKEN;
+    let bot_token: &str  = TEST_BOT_TOKEN;
     let bot = Bot::new(bot_token);
     let db_path = "Database.db";
     let conn = Arc::new(Mutex::new(create_connection(db_path)?));

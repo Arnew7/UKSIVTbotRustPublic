@@ -1,5 +1,5 @@
-use super::memcached;
 
+use super::memcached;
 use reqwest::{Client};
 use scraper::{Html, Selector};
 use tokio;
@@ -18,6 +18,8 @@ use memcached::write_on_memcached;
 use pdf_extract;
 use std::fs;
 use crate::parts::time::{after_tomorrow, today, tomorrow};
+use sha2::{Sha256, Digest};
+use std::collections::HashMap;
 
 pub(crate) async fn replacements_main() -> Result<()> {
     //Все группы колледжа
@@ -74,14 +76,19 @@ pub(crate) async fn replacements_main() -> Result<()> {
 
     let mut handles = Vec::new();
 
+    // Хэш-таблица для хранения предыдущих хешей
+    let mut previous_hashes: Arc<tokio::sync::Mutex<HashMap<String, String>>> = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+
     for group in groups_arc_vector.iter() {
 
         let vec_texts_clone = Arc::clone(&vec_texts_arc);
         let file_paths_clone = Arc::clone(&file_paths_arc);
         let groups_arc_vector_clone = Arc::clone(&groups_arc_vector);
         let group_clone = group.clone();
+        let previous_hashes_clone = Arc::clone(&previous_hashes);
 
         let handle: JoinHandle<Result<(), String>> = tokio::spawn(async move {
+
 
             let mut processed_text = finished(
                 &vec_texts_clone,
@@ -90,6 +97,30 @@ pub(crate) async fn replacements_main() -> Result<()> {
                 &group_clone,
             )
                 .await;
+
+
+
+            // Вычисляем SHA256 хеш текста
+            let mut hasher = Sha256::new();
+            hasher.update(processed_text.as_bytes());
+            let hash = format!("{:x}", hasher.finalize());
+
+            // Получаем мьютекс для доступа к хэш-таблице
+            let mut previous_hashes = previous_hashes_clone.lock().await;
+
+            // Проверяем, изменился ли хеш
+            if let Some(previous_hash) = previous_hashes.get(&group_clone) {
+                if *previous_hash == hash {
+                    println!("Для группы {} замены не изменились", group_clone);
+                    return Ok(()); // Если хеш не изменился, выходим
+                }
+            }
+
+            println!("Для группы {} замены изменились или это первый запуск", group_clone);
+
+            // Обновляем хеш в хэш-таблице
+            previous_hashes.insert(group_clone.clone(), hash.clone());
+
             processed_text.insert_str(0, "\n");
             processed_text.insert_str(0, &group_clone);
 
@@ -107,8 +138,8 @@ pub(crate) async fn replacements_main() -> Result<()> {
         handle.await?;
     }
 
-    //let file_paths: Vec<&Path> = file_paths_arc.iter().map(|path_buf| path_buf.as_path()).collect();
-    //delete_files(&file_paths).await?;
+    let file_paths: Vec<&Path> = file_paths_arc.iter().map(|path_buf| path_buf.as_path()).collect();
+    delete_files(&file_paths).await?;
     Ok(())
 }
 
@@ -393,8 +424,6 @@ fn extract_date(text: &str) -> Option<String> {
 }
 
 
-
-
 fn remove_l(text: &str, group: &str) -> String {
     if let Some(index) = text.find(group) {
         text[index..].replace(group, "")
@@ -419,8 +448,6 @@ fn indexing(text: &str, groups: &Vec<String>) -> String {
         None => text.to_lowercase()
     }
 }
-
-
 
 
 fn replacements(text: &str) -> String {

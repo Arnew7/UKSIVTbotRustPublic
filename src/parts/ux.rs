@@ -1,5 +1,3 @@
-
-// src/Start_Workers
 use super::time::now_in_utc;
 use super::logger::return_to_owner;
 use super::time::now_in_timestamp;
@@ -8,18 +6,23 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 use database::{create_connection, update_user_info};
-use teloxide::{prelude::*, utils::command::BotCommands, types::{CallbackQuery, Message, Update}, dispatching::UpdateFilterExt};
+use teloxide::{prelude::*, utils::command::BotCommands,
+               types::{CallbackQuery, Message as TeloxideMessage, Update, ChatId as TeloxideChatId,
+                       MessageId as TeloxideMessageId}, dispatching::UpdateFilterExt}; // Импортируем и переименовываем teloxide::types::Message
 use std::collections::HashMap;
 use anyhow::Context;
 use chrono::{NaiveDateTime, Timelike};
 use teloxide::payloads::SendMessageSetters;
 use rusqlite::Connection;
 use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup, MessageId};
-use crate::parts::database::{get_group_by_chat_id};
+use crate::parts::database::{get_group_by_chat_id, update_user_message_id};
 use crate::parts::memcached::get_from_memcached;
 use crate::parts::send_to_user::send_to_user_main;
 use super::ring::{get_next_lesson, get_time_delta};
 use crate::Secret::{TEST_BOT_TOKEN, PRODUCTION_BOT_TOKEN};
+use super::database::DatabaseChatId;
+use super::database::DatabaseMessageId;
+
 
 type BoxedError = Box<dyn std::error::Error + Send + Sync + 'static>;
 type AsyncResult<T> = std::result::Result<T, BoxedError>;
@@ -140,20 +143,23 @@ lazy_static::lazy_static! {
 
 
 }
-async fn start_message_with_update(bot: Bot, chat_id: ChatId, message_id: MessageId, timestamp: Instant) {
+
+// Асинхронная функция для отправки стартового сообщения с обновлением.
+pub async fn start_message_with_update(bot: Bot, chat_id: TeloxideChatId, message_id: TeloxideMessageId) {
     match bot.delete_message(chat_id, message_id).await {
         Ok(_) => {
             // Сообщение успешно удалено.  Можно ничего не делать или добавить логирование.
-            start_message(bot, chat_id, timestamp).await;
+            start_message(bot, chat_id).await;
         }
         Err(err) => {
             // Произошла ошибка при удалении сообщения. Обработайте ее.
             eprintln!("Ошибка при удалении сообщения {} в чате {}: {:?}", message_id, chat_id, err);
         }
-
-        }
     }
-async fn start_message(bot: Bot, chat_id: ChatId, timestamp: Instant) {
+}
+
+// Асинхронная функция для отправки стартового сообщения.
+async fn start_message(bot: Bot, chat_id: TeloxideChatId) {
     let group = get_group_by_chat_id(chat_id.0);
 
     let keyboard = create_inline_keyboard(
@@ -162,40 +168,31 @@ async fn start_message(bot: Bot, chat_id: ChatId, timestamp: Instant) {
     let replace = get_from_memcached(group).await.unwrap();
     let vec_time_to_lesson: Vec<String> = get_next_lesson().await.unwrap();
     let message_text: String = if vec_time_to_lesson.len() < 2 {
-
         let time_to_next_lesson = vec_time_to_lesson.get(0).map(|s| s.as_str()).unwrap_or("No lesson scheduled");
-
         format!("Главная:\n\n{}\n\nЗамены:\n{}", time_to_next_lesson, replace)
     } else {
-
         let time_to_next_lesson = vec_time_to_lesson.get(1).map(|s| s.as_str()).unwrap_or("No lesson scheduled");
         let time_to_next_lesson_with_launch = vec_time_to_lesson.get(0).map(|s| s.as_str()).unwrap_or("No lesson scheduled with launch");
-
         format!("Главная:\n\n{}\n\n{}\n\nЗамены:\n{}", time_to_next_lesson, time_to_next_lesson_with_launch, replace)
     };
 
-    bot.send_message(chat_id, message_text)
+    let sent_message = bot
+        .send_message(chat_id, message_text)
         .reply_markup(keyboard)
         .await
-        .with_context(|| format!("Failed to send message to chat ID: {}", chat_id)).unwrap();
+        .with_context(|| format!("Не удалось отправить сообщение в чат ID: {}", chat_id)).unwrap();
 
-    let end = Instant::now();
+    let database_message_id = sent_message.id; // Получаем teloxide::types::MessageId
 
-    let duration: std::time::Duration = end.duration_since(timestamp);
-    if duration > std::time::Duration::from_millis(3000)  {
-        // Что-то сделать, если продолжительность больше 3000 мс
-        println!("Продолжительность {} мс превысила 3000 мс!", duration.as_millis());
-        return_to_owner(duration);
-    }
-
+    update_user_message_id(ChatId(chat_id.0), MessageId(database_message_id.0)).await;
 }
+
+// Асинхронная функция для обработки команды /start.
 async fn start_command(bot: Bot, msg: Message) -> AsyncResult<()> {
     let chat_id = msg.chat.id;
-    let timestamp = Instant::now();
-    start_message(bot,chat_id, timestamp).await;
+    start_message(bot,chat_id).await;
     Ok(())
 }
-
 
 
 
@@ -282,9 +279,9 @@ async fn handle_callback_query(bot: Bot, q: CallbackQuery, conn: Arc<Mutex<Conne
 
             let group = get_group_by_chat_id(chat_id.0);
             let _ = get_from_memcached(group).await.unwrap();
-            let timestamp  = Instant::now();
 
-            start_message_with_update(bot, chat_id, message_id, timestamp).await;
+
+            start_message_with_update(bot, chat_id, message_id).await;
 
             println!("Message sending (UX)");
 
@@ -316,14 +313,14 @@ async fn handle_callback_query(bot: Bot, q: CallbackQuery, conn: Arc<Mutex<Conne
                         Ok(result_message) => {
                             let timestamp  = Instant::now();
 
-                            start_message_with_update(bot.clone(), chat_id, message_id, timestamp).await;
+                            start_message_with_update(bot.clone(), chat_id, message_id).await;
 
                             send_to_user_main(result_message, chat_id.0).await;
                         }
                         Err(error_message) => {
-                            let timestamp  = Instant::now();
 
-                            start_message_with_update(bot.clone(), chat_id, message_id, timestamp).await;
+
+                            start_message_with_update(bot.clone(), chat_id, message_id).await;
 
                             send_to_user_main(error_message, chat_id.0).await.unwrap();
                         }
@@ -337,13 +334,13 @@ async fn handle_callback_query(bot: Bot, q: CallbackQuery, conn: Arc<Mutex<Conne
 
 
         } else if data.starts_with("get_replace") {
-            let timestamp  = Instant::now();
 
-            start_message_with_update(bot, chat_id, message_id, timestamp).await;
+
+            start_message_with_update(bot, chat_id, message_id).await;
 
         } else if data == "back_to_main" {
-            let timestamp  = Instant::now();
-            start_message_with_update(bot, chat_id, message_id, timestamp).await;
+
+            start_message_with_update(bot, chat_id, message_id).await;
         } else if data == "back_to_choice_replace_command"{
             let keyboard = create_inline_keyboard_with_back(
                 REPLACE_OPTIONS.iter().map(|(text, callback)| (text.to_string(), callback.to_string())).collect(),
@@ -387,7 +384,7 @@ fn create_inline_keyboard_with_back(buttons: Vec<(String, String)>, back_callbac
 
 
 async fn run() -> AsyncResult<()> {
-    let bot_token: &str  = TEST_BOT_TOKEN;
+    let bot_token: &str  = PRODUCTION_BOT_TOKEN;
     let bot = Bot::new(bot_token);
     let db_path = "Database.db";
     let conn = Arc::new(Mutex::new(create_connection(db_path)?));

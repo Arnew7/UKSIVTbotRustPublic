@@ -116,7 +116,7 @@ pub(crate) async fn replacements_main() -> Result<()> {
                 }
             }
 
-            println!("Для группы {} замены изменились или это первый запуск", group_clone);
+
 
             // Обновляем хеш в хэш-таблице
             previous_hashes.insert(group_clone.clone(), hash.clone());

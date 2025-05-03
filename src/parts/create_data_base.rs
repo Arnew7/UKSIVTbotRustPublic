@@ -15,7 +15,8 @@ pub(crate) async fn create_database() -> Result<()> {
         "CREATE TABLE IF NOT EXISTS info_users (
             chat_id INTEGER PRIMARY KEY,
             group_inf TEXT DEFAULT '23веб-1',
-            username TEXT DEFAULT NULL
+            username TEXT DEFAULT NULL,
+            message_id INTEGER DEFAULT NULL
         )",
         [],
     )?;

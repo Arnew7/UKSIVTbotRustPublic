@@ -114,7 +114,7 @@ pub async fn get_time_delta(n_lesson: u32) -> Result<String, String> {
 
     // Обработка воскресенья
     if weekday == Weekday::Sun{
-        // Если сегодня воскресенье или завтра воскресенье
+
         return Err("Сегодня воскресенье, пар нет.".into());
     }
 
@@ -336,68 +336,59 @@ pub async fn get_next_lesson() -> Result<Vec<String>, String> {
             match (first_with_lunch, first_without_lunch) {
                 (Some((lesson_num_lunch, lesson_time_lunch, _)), Some((lesson_num_no_lunch, lesson_time_no_lunch, _))) => {
                     // Сравниваем времена начала уроков и выбираем ближайший
-                    let time_lunch = NaiveTime::from_hms_opt(lesson_time_lunch.hour, lesson_time_lunch.minute, 0).unwrap();
-                    let time_no_lunch = NaiveTime::from_hms_opt(lesson_time_no_lunch.hour, lesson_time_no_lunch.minute, 0).unwrap();
 
-                    // Получаем текущее время
-                    let now = Local::now().time();
+                    //Создаем DateTime для времени начала урока на следующий день
+                    let next_day_lunch_datetime = lesson_time_to_datetime(lesson_time_lunch, next_day)
+                        .ok_or("Invalid lesson time".to_string())?;
+                    let next_day_no_lunch_datetime = lesson_time_to_datetime(lesson_time_no_lunch, next_day)
+                        .ok_or("Invalid lesson time".to_string())?;
+                    let now = Local::now(); // Получаем текущее DateTime
 
-                    // Вычисляем продолжительность до начала каждого урока
-                    let duration_lunch = if time_lunch >= now {
-                        time_lunch - now
-                    } else {
-                        // Если урок уже прошел сегодня, считаем разницу до завтрашнего урока
-                        (time_lunch + chrono::Duration::hours(24)) - now
-                    };
+                    let duration_lunch = next_day_lunch_datetime.signed_duration_since(now);
+                    let duration_no_lunch = next_day_no_lunch_datetime.signed_duration_since(now);
 
-                    let duration_no_lunch = if time_no_lunch >= now {
-                        time_no_lunch - now
-                    } else {
-                        // Если урок уже прошел сегодня, считаем разницу до завтрашнего урока
-                        (time_no_lunch + chrono::Duration::hours(24)) - now
-                    };
-
-                    // Сравниваем продолжительности и выбираем ближайший урок
                     if duration_lunch <= duration_no_lunch {
+                        let hours = duration_lunch.num_hours();
+                        let minutes = (duration_lunch.num_minutes() % 60).abs();
                         results.push(format!(
                             "Завтра (с обедом): Первая пара {} через {} ч {} мин.",
-                            lesson_num_lunch, duration_lunch.num_hours(), duration_lunch.num_minutes() % 60
+                            lesson_num_lunch, hours, minutes
                         ));
                     } else {
+                        let hours = duration_no_lunch.num_hours();
+                        let minutes = (duration_no_lunch.num_minutes() % 60).abs();
+
                         results.push(format!(
                             "Завтра (без обеда): Первая пара {} через {} ч {} мин.",
-                            lesson_num_no_lunch, duration_no_lunch.num_hours(), duration_no_lunch.num_minutes() % 60
+                            lesson_num_no_lunch, hours, minutes
                         ));
                     }
                 }
                 (Some((lesson_num, lesson_time, _)), None) => {
-                    let time = NaiveTime::from_hms_opt(lesson_time.hour, lesson_time.minute, 0).unwrap();
-                    let now = Local::now().time();
+                    let next_day_datetime = lesson_time_to_datetime(lesson_time, next_day)
+                        .ok_or("Invalid lesson time".to_string())?;
+                    let now = Local::now();
 
-                    let duration = if time >= now {
-                        time - now
-                    } else {
-                        (time + chrono::Duration::hours(24)) - now
-                    };
-
+                    let duration = next_day_datetime.signed_duration_since(now);
+                    let hours = duration.num_hours();
+                    let minutes = (duration.num_minutes() % 60).abs();
                     results.push(format!(
                         "Завтра (с обедом): Первая пара {} через {} ч {} мин.",
-                        lesson_num, duration.num_hours(), duration.num_minutes() % 60
+                        lesson_num,  hours, minutes
                     ));
                 }
                 (None, Some((lesson_num, lesson_time, _))) => {
-                    let time = NaiveTime::from_hms_opt(lesson_time.hour, lesson_time.minute, 0).unwrap();
-                    let now = Local::now().time();
+                    let next_day_datetime = lesson_time_to_datetime(lesson_time, next_day)
+                        .ok_or("Invalid lesson time".to_string())?;
+                    let now = Local::now();
 
-                    let duration = if time >= now {
-                        time - now
-                    } else {
-                        (time + chrono::Duration::hours(24)) - now
-                    };
+                    let duration = next_day_datetime.signed_duration_since(now);
+                    let hours = duration.num_hours();
+                    let minutes = (duration.num_minutes() % 60).abs();
 
                     results.push(format!(
                         "Завтра (без обеда): Первая пара {} через {} ч {} мин.",
-                        lesson_num, duration.num_hours(), duration.num_minutes() % 60
+                        lesson_num,  hours, minutes
                     ))
                 }
                 (None, None) => results.push("Завтра уроков нет.".to_string()),

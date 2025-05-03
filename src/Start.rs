@@ -63,14 +63,14 @@ async fn main() {
 
     let ux_task = tokio::spawn(run_with_restart(
         || task::spawn(async {
-            parts::ux::start_ux().await; // Если start_ux возвращает (), то здесь ничего не нужно делать
+            parts::ux::start_ux().await; // Если start_ux возвращает ()
         }),
         "start_ux",
     ));
 
     let replace_task = tokio::spawn(run_with_restart(
         || task::spawn(async {
-            parts::Cycle::cycle_work_replace().await; // Если cycle_work_replace возвращает (), ничего не делаем
+            parts::Cycle::cycle_work_replace().await; // Если cycle_work_replace возвращает ()
         }),
         "cycle_work_replace",
     ));

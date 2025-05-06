@@ -20,27 +20,25 @@ use std::fs;
 use crate::parts::time::{after_tomorrow, today, tomorrow};
 use sha2::{Sha256, Digest};
 use std::collections::HashMap;
+use crate::parts::Cycle::send_notification;
 
 pub(crate) async fn replacements_main() -> Result<()> {
     //Все группы колледжа
-    let groups_vec :Vec<String>  = vec![
+    let groups_vec: Vec<String> = vec![
         "24укск-1", "24укск-2", "24са-1", "24са-2", "24п-1", "24п-2", "24п-3", "24п-4", "24п-5", "24веб-1", "24веб-2",
         "24иис-1", "24оиб-1", "24оиб-2", "24з-1", "24з-2", "24э-1", "24э-2", "24ю-1", "24ю-2", "24ю-3", "24ю-4", "24пд-1",
         "24пд-2", "24л-1", "24л-2", "24ул-1",
-
         "23по-2", "23веб-1", "23веб-2", "23з-1", "23з-2", "23л-1", "23л-2", "23оиб-1", "23оиб-2",
         "23п-1", "23п-2", "23п-3", "23п-4", "23п-5", "23п-6", "23пд-1", "23пд-2", "23по-1", "23по-2",
         "23по-3", "23по-4", "23по-5", "23са-1", "23са-2", "23са-3", "23укск-1", "23ул-1", "23э-1",
         "23э-2",
-
         "22бд-1", "22веб-1", "22веб-2", "22зио-1", "22зио-2", "22ис-1", "22л-1", "22л-2",
         "22оиб-1", "22оиб-2", "22п-1", "22п-2", "22п-3", "22пд-1", "22пд-2", "22по-1", "22по-2",
         "22по-3", "22пса-1", "22пса-2", "22пса-3", "22са-1", "22са-2", "22укск-1", "22укск-2",
         "22э-1", "22э-2",
-
         "21бд-1", "21веб-1", "21веб-2", "21зио-1", "21зио-2", "21зио-3",
         "21ис-1", "21л-1", "21л-2", "21оиб-1", "21оиб-2", "21оиб-3", "21п-1", "21п-2", "21п-3",
-        "21пд-1", "21пд-1", "21пд-2", "21пд-2", "21пд-3", "21пд-3",  "21по-1", "21по-1",
+        "21пд-1", "21пд-1", "21пд-2", "21пд-2", "21пд-3", "21пд-3", "21по-1", "21по-1",
         "21по-2", "21по-2", "21по-3", "21по-4",
         "21пса-1", "21пса-2", "21пса-3", "21пса-4", "21пса-6",
         "21са-1",
@@ -48,7 +46,6 @@ pub(crate) async fn replacements_main() -> Result<()> {
         "21укск-1",
         "21э-1",
         "21э-2",
-
     ].iter().map(|s| s.to_string()).collect();
     let groups_arc_vector = Arc::new(groups_vec);
 
@@ -76,21 +73,19 @@ pub(crate) async fn replacements_main() -> Result<()> {
 
     let mut handles = Vec::new();
 
-    // Хэш-таблица для хранения предыдущих хешей
-    let mut previous_hashes: Arc<tokio::sync::Mutex<HashMap<String, String>>> = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+    // Хэш-таблица для хранения длины текста
+    let mut previous_lengths: Arc<tokio::sync::Mutex<HashMap<String, usize>>> = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
 
     for group in groups_arc_vector.iter() {
-
         let vec_texts_clone = Arc::clone(&vec_texts_arc);
         let file_paths_clone = Arc::clone(&file_paths_arc);
         let groups_arc_vector_clone = Arc::clone(&groups_arc_vector);
         let group_clone = group.clone();
-        let previous_hashes_clone = Arc::clone(&previous_hashes);
+        let previous_lengths_clone = Arc::clone(&previous_lengths);
 
         let handle: JoinHandle<Result<(), String>> = tokio::spawn(async move {
-
-
-            let mut processed_text = finished(
+            // Получаем обработанный текст
+            let processed_text = finished(
                 &vec_texts_clone,
                 &file_paths_clone,
                 &groups_arc_vector_clone,
@@ -100,38 +95,41 @@ pub(crate) async fn replacements_main() -> Result<()> {
 
 
 
-            // Вычисляем SHA256 хеш текста
-            let mut hasher = Sha256::new();
-            hasher.update(processed_text.as_bytes());
-            let hash = format!("{:x}", hasher.finalize());
+            // Вычисляем длину текста
+            let length = processed_text.len();
+
 
             // Получаем мьютекс для доступа к хэш-таблице
-            let mut previous_hashes = previous_hashes_clone.lock().await;
+            let mut previous_lengths = previous_lengths_clone.lock().await;
 
-            // Проверяем, изменился ли хеш
-            if let Some(previous_hash) = previous_hashes.get(&group_clone) {
-                if *previous_hash == hash {
+
+
+            // Проверяем, изменилась ли длина текста
+            if let Some(prev_length) = previous_lengths.get(&group_clone) {
+                if *prev_length == length {
                     println!("Для группы {} замены не изменились", group_clone);
-                    return Ok(()); // Если хеш не изменился, выходим
+                    return Ok(()); // Если длина не изменилась, выходим
                 }
             }
 
+            // Обновляем длину в хэш-таблице
+            previous_lengths.insert(group_clone.clone(), length);
 
 
-            // Обновляем хеш в хэш-таблице
-            previous_hashes.insert(group_clone.clone(), hash.clone());
+            let mut processed_text_with_group = processed_text.clone();
+            processed_text_with_group.insert_str(0, "\n");
+            processed_text_with_group.insert_str(0, &group_clone);
 
-            processed_text.insert_str(0, "\n");
-            processed_text.insert_str(0, &group_clone);
-
-            write_on_memcached(processed_text, group_clone)
+            // Записываем результат в Memcached
+            write_on_memcached(processed_text_with_group, group_clone)
                 .await
-                .map_err(|e| e.to_string())?; // Convert error
-
+                .map_err(|e| e.to_string())?;
 
             Ok(())
         });
         handles.push(handle);
+        // Отправляем обновление на главное меню
+        send_notification();
     }
 
     for handle in handles {

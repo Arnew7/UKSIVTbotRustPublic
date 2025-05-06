@@ -29,9 +29,9 @@ pub struct Info_for_del{
 }
 
 // Асинхронная функция для отправки уведомлений.
-pub async fn send_notification(message: String) -> anyhow::Result<()> {
+pub async fn send_notification() -> anyhow::Result<()> {
     tokio::time::sleep(Duration::from_secs(15)).await;
-    let bot_token: &str  = PRODUCTION_BOT_TOKEN;
+    let bot_token: &str  = TEST_BOT_TOKEN;
 
     let info = get_user_and_group_and_message_id().unwrap();
 
@@ -43,7 +43,7 @@ pub async fn send_notification(message: String) -> anyhow::Result<()> {
         let teloxide_chat_id = TeloxideChatId(chat_id.0);
         let teloxide_message_id= TeloxideMessageId(message_id.0);
 
-        start_message_with_update(bot, teloxide_chat_id, teloxide_message_id).await; // Используем существующую функцию
+        start_message_with_update(bot, teloxide_chat_id, teloxide_message_id).await;
     }
 
     Ok(())

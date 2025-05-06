@@ -148,12 +148,14 @@ lazy_static::lazy_static! {
 pub async fn start_message_with_update(bot: Bot, chat_id: TeloxideChatId, message_id: TeloxideMessageId) {
     match bot.delete_message(chat_id, message_id).await {
         Ok(_) => {
-            // Сообщение успешно удалено.  Можно ничего не делать или добавить логирование.
+
             start_message(bot, chat_id).await;
         }
         Err(err) => {
-            // Произошла ошибка при удалении сообщения. Обработайте ее.
-            eprintln!("Ошибка при удалении сообщения {} в чате {}: {:?}", message_id, chat_id, err);
+            eprintln!("Ошибка при удалении сообщения {} в чате {}: {:?}", &message_id, &chat_id, err);
+            start_message(bot, chat_id.clone()).await;
+            send_to_user_main("Ошибка при удалении сообщения".to_string(), chat_id.0);
+
         }
     }
 }
@@ -384,7 +386,7 @@ fn create_inline_keyboard_with_back(buttons: Vec<(String, String)>, back_callbac
 
 
 async fn run() -> AsyncResult<()> {
-    let bot_token: &str  = PRODUCTION_BOT_TOKEN;
+    let bot_token: &str  = TEST_BOT_TOKEN;
     let bot = Bot::new(bot_token);
     let db_path = "Database.db";
     let conn = Arc::new(Mutex::new(create_connection(db_path)?));

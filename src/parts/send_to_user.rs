@@ -27,7 +27,7 @@ async fn send_telegram_message_without_delete(bot: Bot, data: String, chat_id: i
 
 
 pub async fn send_to_user_main(data: String, chat_id: i64) -> Result<(), Box<dyn Error>> {
-    let bot_token: &str  =  PRODUCTION_BOT_TOKEN;
+    let bot_token: &str  =  TEST_BOT_TOKEN;
 
     let bot = Bot::new(bot_token);
 

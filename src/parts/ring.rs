@@ -142,7 +142,7 @@ pub async fn get_next_lesson() -> Result<Vec<String>, String> {
                 match calculate_time_delta(lesson_time_with, current_day).await {
                     Ok((hours, minutes)) => {
                         results.push(format!(
-                            "До начала {}й пары осталось: {} часов и {} минут.",
+                            "До начала {}-й пары осталось: {} часов и {} минут.",
                             lesson_num_with, hours, minutes
                         ));
                     }
@@ -169,16 +169,24 @@ pub async fn get_next_lesson() -> Result<Vec<String>, String> {
             let next_ring_with_lunch = schedule_with_lunch.get(&next_weekday_num).unwrap_or(&default_schedule_with_lunch);
             let next_ring_without_lunch = schedule_without_lunch.get(&next_weekday_num).unwrap_or(&default_schedule_without_lunch);
 
-            find_first_lesson(next_day, next_ring_with_lunch, "с обедом", &mut results).await;
-            find_first_lesson(next_day, next_ring_without_lunch, "без обеда", &mut results).await;
+            let mut next_day_results = vec![];
+            find_first_lesson(next_day, next_ring_with_lunch, "с обедом", &mut next_day_results).await;
+            find_first_lesson(next_day, next_ring_without_lunch, "без обеда", &mut next_day_results).await;
+
+            if let (Some(res1), Some(res2)) = (next_day_results.get(0), next_day_results.get(1)) {
+                if res1 == res2 {
+                    results.push(res1.clone());
+                } else {
+                    results.extend(next_day_results);
+                }
+            } else {
+                results.extend(next_day_results);
+            }
         }
     }
 
     if results.is_empty() {
         results.push("Уроков на сегодня больше нет".to_string());
-    }
-    if results[0] == results[1] {
-
     }
     Ok(results)
 }
@@ -193,7 +201,7 @@ async fn process_lesson_time(
     match calculate_time_delta(lesson_time, current_day).await {
         Ok((hours, minutes)) => {
             results.push(format!(
-                "{}: До начала {}й пары осталось: {} часов и {} минут.",
+                "{}: До начала {}-й пары осталось: {} часов и {} минут.",
                 schedule_type, lesson_num, hours, minutes
             ));
         }
@@ -225,8 +233,8 @@ async fn find_first_lesson(
         let minutes = (duration.num_minutes() % 60).abs();
 
         results.push(format!(
-            "Завтра ({}) первая пара {} через {} ч {} мин.",
-            schedule_type, lesson_num, hours, minutes
+            "Завтра: Первая пара {} через {} ч {} мин.",
+            lesson_num, hours, minutes
         ));
     }
 }

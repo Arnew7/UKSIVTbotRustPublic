@@ -32,7 +32,7 @@ pub struct Info_for_del{
 pub async fn send_notification() -> anyhow::Result<()> {
     tokio::time::sleep(Duration::from_secs(15)).await;
     let bot_token: &str  = TEST_BOT_TOKEN;
-
+    println!("Файлы изменились");
     let info = get_user_and_group_and_message_id().unwrap();
 
     for user in info {

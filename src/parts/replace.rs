@@ -21,6 +21,7 @@ use crate::parts::time::{after_tomorrow, today, tomorrow};
 use sha2::{Sha256, Digest};
 use std::collections::HashMap;
 use crate::parts::Cycle::send_notification;
+use crate::parts::memcached::get_from_memcached;
 
 pub(crate) async fn replacements_main() -> Result<()> {
     //Все группы колледжа
@@ -67,21 +68,38 @@ pub(crate) async fn replacements_main() -> Result<()> {
 
     let file_paths = process_download(r_links).await?;
     let vec_texts = read_and_process_files(&file_paths).await?;
+    let mut length :u32 = 0;
+
+    for i in &vec_texts {
+        length = length + i.len() as u32;
+    }
+    if get_from_memcached("Weight".to_string()).await.unwrap() == "Start".to_string() {
+        write_on_memcached(length.to_string(), "Weight".to_string()).await.unwrap();
+        println!("Обнаружена начальная точка");
+        return Ok(())
+    }
+    if let Ok(weight_string) = get_from_memcached("Weight".to_string()).await {
+        if let Ok(weight) = weight_string.parse::<i32>() {
+            if length as i32 == weight {
+                println!("Файлы не изменились");
+                return Ok(())
+            }
+        }
+    }
 
     let vec_texts_arc = Arc::new(vec_texts);
     let file_paths_arc = Arc::new(file_paths);
 
     let mut handles = Vec::new();
 
-    // Хэш-таблица для хранения длины текста
-    let mut previous_lengths: Arc<tokio::sync::Mutex<HashMap<String, usize>>> = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+
 
     for group in groups_arc_vector.iter() {
         let vec_texts_clone = Arc::clone(&vec_texts_arc);
         let file_paths_clone = Arc::clone(&file_paths_arc);
         let groups_arc_vector_clone = Arc::clone(&groups_arc_vector);
         let group_clone = group.clone();
-        let previous_lengths_clone = Arc::clone(&previous_lengths);
+
 
         let handle: JoinHandle<Result<(), String>> = tokio::spawn(async move {
             // Получаем обработанный текст
@@ -92,28 +110,6 @@ pub(crate) async fn replacements_main() -> Result<()> {
                 &group_clone,
             )
                 .await;
-
-
-
-            // Вычисляем длину текста
-            let length = processed_text.len();
-
-
-            // Получаем мьютекс для доступа к хэш-таблице
-            let mut previous_lengths = previous_lengths_clone.lock().await;
-
-
-
-            // Проверяем, изменилась ли длина текста
-            if let Some(prev_length) = previous_lengths.get(&group_clone) {
-                if *prev_length == length {
-                    println!("Для группы {} замены не изменились", group_clone);
-                    return Ok(()); // Если длина не изменилась, выходим
-                }
-            }
-
-            // Обновляем длину в хэш-таблице
-            previous_lengths.insert(group_clone.clone(), length);
 
 
             let mut processed_text_with_group = processed_text.clone();
@@ -129,13 +125,13 @@ pub(crate) async fn replacements_main() -> Result<()> {
         });
         handles.push(handle);
         // Отправляем обновление на главное меню
-        send_notification();
+
     }
 
     for handle in handles {
         handle.await?;
     }
-
+    send_notification().await;
     let file_paths: Vec<&Path> = file_paths_arc.iter().map(|path_buf| path_buf.as_path()).collect();
     delete_files(&file_paths).await?;
     Ok(())

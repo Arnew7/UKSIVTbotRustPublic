@@ -8,6 +8,7 @@ mod Secret;
 use std::time::Duration;
 use futures::TryFutureExt;
 use tokio::{select, time, task};
+use tokio::time::sleep;
 use tracing::subscriber::set_global_default;
 
 use crate::parts::memcached::write_on_memcached;
@@ -15,7 +16,8 @@ use crate::parts::memcached::write_on_memcached;
 #[tokio::main]
 async fn main() {
     // Инициализация начальной точки сравнения размера замен
-    write_on_memcached("Start".to_string(), "Weight".to_string()).await.unwrap();
+    write_on_memcached("Start".to_string(), "Weight".to_string()).await.expect("Ошибка инициализации начального веса замен");
+    tokio::time::sleep(Duration::from_secs(5)).await;
     println!("Weight инициализирован");
 
     // Функция для запуска задачи с обработкой ошибок и перезапуском

@@ -10,7 +10,7 @@ use std::rc::Rc;
 
 pub async fn get_from_memcached(group: String) -> Result<String, MyError> {
     // 1. Создание подключения к Memcached
-    let client_result = Client::connect(MEMCACHED_TEST_ADDRESS);
+    let client_result = Client::connect(MEMCACHED_PRODUCTION_ADDRESS);
 
     let memcached_client = match client_result {
         Ok(client) => Rc::new(client),
@@ -49,7 +49,7 @@ pub async fn get_from_memcached(group: String) -> Result<String, MyError> {
 
 pub async fn write_on_memcached(text: String, group: String) -> Result<(), MyError> {
     // 1. Создание подключения к Memcached
-    let client_result = Client::connect(MEMCACHED_TEST_ADDRESS);
+    let client_result = Client::connect(MEMCACHED_PRODUCTION_ADDRESS);
 
     let memcached_client = match client_result {
         Ok(client) => Rc::new(client), // Оборачиваем в Rc

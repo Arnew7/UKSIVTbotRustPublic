@@ -19,13 +19,13 @@ use crate::parts::database::{get_group_by_chat_id, update_user_message_id};
 use crate::parts::memcached::get_from_memcached;
 use crate::parts::send_to_user::send_to_user_main;
 use super::ring::{get_next_lesson, get_time_delta};
-use crate::Secret::{TEST_BOT_TOKEN, PRODUCTION_BOT_TOKEN};
+use crate::Secret::{PRODUCTION_BOT_TOKEN, TEST_BOT_TOKEN};
 use super::database::DatabaseChatId;
 use super::database::DatabaseMessageId;
 
 
 type BoxedError = Box<dyn std::error::Error + Send + Sync + 'static>;
-type AsyncResult<T> = std::result::Result<T, BoxedError>;
+type AsyncResult<T> = Result<T, BoxedError>;
 
 #[derive(BotCommands, Clone, Debug)]
 #[command(rename_rule = "lowercase", description = "These commands are supported:")]
@@ -154,7 +154,7 @@ pub async fn start_message_with_update(bot: Bot, chat_id: TeloxideChatId, messag
         Err(err) => {
             eprintln!("Ошибка при удалении сообщения {} в чате {}: {:?}", &message_id, &chat_id, err);
             start_message(bot, chat_id.clone()).await;
-            send_to_user_main("Ошибка при удалении сообщения".to_string(), chat_id.0);
+            send_to_user_main("Ошибка при удалении сообщения".to_string(), chat_id.0).await.expect("Ошибка отправки сообщения об ошибки пользователь from ux str 157");
 
         }
     }
@@ -167,8 +167,8 @@ async fn start_message(bot: Bot, chat_id: TeloxideChatId) {
     let keyboard = create_inline_keyboard(
         MAIN.iter().map(|(text, callback)| (text.to_string(), callback.to_string())).collect()
     );
-    let replace = get_from_memcached(group).await.unwrap();
-    let vec_time_to_lesson: Vec<String> = get_next_lesson().await.unwrap();
+    let replace = get_from_memcached(group).await.expect("Ошибка в получении замен из memcached from UX str 170");
+    let vec_time_to_lesson: Vec<String> = get_next_lesson().await.expect("Ошибка в получении времени до следующей пары from UX str 170");
     let message_text: String = if vec_time_to_lesson.len() < 2 {
         let time_to_next_lesson = vec_time_to_lesson.get(0).map(|s| s.as_str()).unwrap_or("No lesson scheduled");
         format!("Главная:\n\n{}\n\nЗамены:\n{}", time_to_next_lesson, replace)
@@ -186,7 +186,7 @@ async fn start_message(bot: Bot, chat_id: TeloxideChatId) {
 
     let database_message_id = sent_message.id; // Получаем teloxide::types::MessageId
 
-    update_user_message_id(ChatId(chat_id.0), MessageId(database_message_id.0)).await;
+    update_user_message_id(ChatId(chat_id.0), MessageId(database_message_id.0)).await.expect("Не удалось обновить id последнего сообщения from UX str 189");
 }
 
 // Асинхронная функция для обработки команды /start.
@@ -205,7 +205,7 @@ async fn handle_callback_query(bot: Bot, q: CallbackQuery, conn: Arc<Mutex<Conne
 
         let chat_id: ChatId = q.message.as_ref().map(|m| m.chat.id).unwrap_or(q.from.id.into());
         println!("{}", chat_id.0);
-        let message_id = q.message.as_ref().map(|m| m.id).unwrap_or(teloxide::types::MessageId(0));
+        let message_id = q.message.as_ref().map(|m| m.id).unwrap_or(MessageId(0));
 
         if data == "choice_setting_command"{
             let keyboard = create_inline_keyboard_with_back(
@@ -267,11 +267,11 @@ async fn handle_callback_query(bot: Bot, q: CallbackQuery, conn: Arc<Mutex<Conne
                     return Ok(());
                 }
             };
-            let keyboard = create_inline_keyboard(
+            let _ = create_inline_keyboard(
                 MAIN.iter().map(|(text, callback)| (text.to_string(), callback.to_string())).collect()
             );
 
-            let user_id = q.from.id;
+
             let username = q.from.username.clone();
             let direction_ = GROUPS.iter().find_map(|(d, groups)| if groups.contains(&group) { Some(d) } else { None }).map_or("", |v| v);
             let _ = DIRECTIONS.iter().find_map(|(y, dirs)| if dirs.contains(&direction_.to_string()) { Some(y) } else { None }).map_or("", |v| v);
@@ -313,21 +313,21 @@ async fn handle_callback_query(bot: Bot, q: CallbackQuery, conn: Arc<Mutex<Conne
 
                     match get_time_delta(lesson_number).await {
                         Ok(result_message) => {
-                            let timestamp  = Instant::now();
+
 
                             start_message_with_update(bot.clone(), chat_id, message_id).await;
 
-                            send_to_user_main(result_message, chat_id.0).await;
+                            send_to_user_main(result_message, chat_id.0).await.expect("Ошибка отправки сообщения об ошибки пользователь from ux str 320");
                         }
                         Err(error_message) => {
 
 
                             start_message_with_update(bot.clone(), chat_id, message_id).await;
 
-                            send_to_user_main(error_message, chat_id.0).await.unwrap();
+                            send_to_user_main(error_message, chat_id.0).await.expect("Ошибка отправки сообщения об ошибки пользователь from ux str 327");
                         }
                     }
-                    bot.answer_callback_query(q.id).await; // Подтверждаем получение callback
+                    bot.answer_callback_query(q.id).await.expect("Ошибка подтверждения кнопки from UX str 330"); // Подтверждаем получение callback
                 }
                 Err(_) => {
                     bot.send_message(chat_id, "Некорректный номер пары.").await?;
@@ -386,7 +386,7 @@ fn create_inline_keyboard_with_back(buttons: Vec<(String, String)>, back_callbac
 
 
 async fn run() -> AsyncResult<()> {
-    let bot_token: &str = TEST_BOT_TOKEN;
+    let bot_token: &str = PRODUCTION_BOT_TOKEN;
     let bot = Bot::new(bot_token);
     let db_path = "Database.db";
     let conn = Arc::new(Mutex::new(create_connection(db_path)?));

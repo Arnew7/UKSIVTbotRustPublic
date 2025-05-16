@@ -1,15 +1,10 @@
-
 use std::time::Duration;
+use teloxide::types::{ChatId as TeloxideChatId, MessageId as TeloxideMessageId};
 use teloxide::Bot;
-use teloxide::types::{ChatId as TeloxideChatId, MessageId as TeloxideMessageId}; // Переименовываем, чтобы избежать конфликта
-use tokio::time::sleep;
-use crate::parts::database::{get_user_and_group_and_message_id, get_user_and_group};
-use crate::parts::memcached::get_from_memcached;
-use crate::parts::send_to_user::send_to_user_main;
 use super::replace::replacements_main;
 use super::ux::start_message_with_update;
-use crate::Secret::{TEST_BOT_TOKEN, PRODUCTION_BOT_TOKEN};
-
+use crate::parts::database::get_user_and_group_and_message_id;
+use crate::Secret::{PRODUCTION_BOT_TOKEN, TEST_BOT_TOKEN};
 
 
 pub async fn cycle_work_replace() {
@@ -18,12 +13,12 @@ pub async fn cycle_work_replace() {
             Ok(_) => {}
             Err(_) => {}
         };
-        std::thread::sleep(std::time::Duration::from_secs(60));
+        tokio::time::sleep(Duration::from_secs(60)).await;
     }
 }
 // Структура для хранения информации для удаления сообщений.
 #[derive(Debug)]
-pub struct Info_for_del{
+pub struct InfoForDel {
     pub id: TeloxideChatId,
     pub Message_id: TeloxideMessageId,
 }
@@ -31,9 +26,9 @@ pub struct Info_for_del{
 // Асинхронная функция для отправки уведомлений.
 pub async fn send_notification() -> anyhow::Result<()> {
     tokio::time::sleep(Duration::from_secs(15)).await;
-    let bot_token: &str  = TEST_BOT_TOKEN;
+    let bot_token: &str  = PRODUCTION_BOT_TOKEN;
     println!("Файлы изменились");
-    let info = get_user_and_group_and_message_id().unwrap();
+    let info = get_user_and_group_and_message_id().expect("Ошибка получинии user, group and message_id from Cycle str 36");
 
     for user in info {
         let chat_id = user.id;
@@ -44,6 +39,7 @@ pub async fn send_notification() -> anyhow::Result<()> {
         let teloxide_message_id= TeloxideMessageId(message_id.0);
 
         start_message_with_update(bot, teloxide_chat_id, teloxide_message_id).await;
+
     }
 
     Ok(())

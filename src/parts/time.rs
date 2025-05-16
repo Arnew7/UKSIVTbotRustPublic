@@ -1,6 +1,5 @@
 
 use chrono::{Local, Duration, Utc, Timelike, FixedOffset};
-use chrono_tz::TzOffset;
 use tokio::task;
 
 /// Returns today's day in DD format.
@@ -23,7 +22,6 @@ pub async fn after_tomorrow() -> String {
 
 pub async fn now_in_utc() -> (u32, u32) {
     let now_uf = Utc::now();
-    let timestamp = now_uf.timestamp();
     // Возвращаем время в формате UTC
     let hours = now_uf.hour();
     let minutes = now_uf.minute();

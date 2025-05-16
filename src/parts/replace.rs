@@ -18,8 +18,7 @@ use memcached::write_on_memcached;
 use pdf_extract;
 use std::fs;
 use crate::parts::time::{after_tomorrow, today, tomorrow};
-use sha2::{Sha256, Digest};
-use std::collections::HashMap;
+use sha2::{Digest};
 use crate::parts::Cycle::send_notification;
 use crate::parts::memcached::get_from_memcached;
 
@@ -73,8 +72,8 @@ pub(crate) async fn replacements_main() -> Result<()> {
     for i in &vec_texts {
         length = length + i.len() as u32;
     }
-    if get_from_memcached("Weight".to_string()).await.unwrap() == "Start".to_string() {
-        write_on_memcached(length.to_string(), "Weight".to_string()).await.unwrap();
+    if get_from_memcached("Weight".to_string()).await.expect("Ошибка получения веса замен из memcached from replace str 76") == "Start".to_string() {
+        write_on_memcached(length.to_string(), "Weight".to_string()).await.expect("Ошибка записи веса замен в memcached from replace str 77");
         println!("Обнаружена начальная точка");
         return Ok(())
     }
@@ -129,9 +128,9 @@ pub(crate) async fn replacements_main() -> Result<()> {
     }
 
     for handle in handles {
-        handle.await?;
+        handle.await?.expect("ERR from replace str 132");
     }
-    send_notification().await;
+    send_notification().await.expect("Ошибка отправки сообщения с новыми заменами from replace str 134");
     let file_paths: Vec<&Path> = file_paths_arc.iter().map(|path_buf| path_buf.as_path()).collect();
     delete_files(&file_paths).await?;
     Ok(())

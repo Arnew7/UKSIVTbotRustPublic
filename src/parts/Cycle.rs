@@ -10,8 +10,12 @@ use crate::Secret::{PRODUCTION_BOT_TOKEN, TEST_BOT_TOKEN};
 pub async fn cycle_work_replace() {
     loop {
         match replacements_main().await {
-            Ok(_) => {}
-            Err(_) => {}
+            Ok(_) => {
+                println!("replacements_main completed successfully");
+            }
+            Err(e) => {
+                println!("Error in replacements_main: {:?}", e);
+            }
         };
         tokio::time::sleep(Duration::from_secs(60)).await;
     }

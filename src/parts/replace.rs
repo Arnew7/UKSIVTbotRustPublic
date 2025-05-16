@@ -11,12 +11,16 @@ use tokio::io::AsyncReadExt;
 use tokio::task::JoinHandle;
 use futures::future::join_all;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc};
+use std::sync::{Arc, Once};
+use tokio::sync::OnceCell;
+use tokio::time::{sleep};
 use std::io::{self};
 use regex::Regex;
 use memcached::write_on_memcached;
 use pdf_extract;
 use std::fs;
+use std::time::Duration;
+use log::info;
 use crate::parts::time::{after_tomorrow, today, tomorrow};
 use sha2::{Digest};
 use crate::parts::Cycle::send_notification;
@@ -72,19 +76,22 @@ pub(crate) async fn replacements_main() -> Result<()> {
     for i in &vec_texts {
         length = length + i.len() as u32;
     }
-    if get_from_memcached("Weight".to_string()).await.expect("Ошибка получения веса замен из memcached from replace str 76") == "Start".to_string() {
-        write_on_memcached(length.to_string(), "Weight".to_string()).await.expect("Ошибка записи веса замен в memcached from replace str 77");
-        println!("Обнаружена начальная точка");
-        return Ok(())
-    }
-    if let Ok(weight_string) = get_from_memcached("Weight".to_string()).await {
-        if let Ok(weight) = weight_string.parse::<i32>() {
-            if length as i32 == weight {
-                println!("Файлы не изменились");
-                return Ok(())
-            }
-        }
-    }
+
+
+    static START_WEIGHT_REPLACE_INIT: OnceCell<()> = OnceCell::const_new();
+
+    START_WEIGHT_REPLACE_INIT
+        .get_or_try_init(|| async {
+            write_on_memcached(length.to_string(), "Weight".to_string())
+                .await
+                .context("Ошибка инициализации начального веса замен")?;
+            sleep(Duration::from_secs(5)).await;
+            println!("Weight инициализирован");
+            Ok::<(), Error>(())
+        })
+        .await?;
+
+
 
     let vec_texts_arc = Arc::new(vec_texts);
     let file_paths_arc = Arc::new(file_paths);
@@ -128,11 +135,63 @@ pub(crate) async fn replacements_main() -> Result<()> {
     }
 
     for handle in handles {
-        handle.await?.expect("ERR from replace str 132");
+        match handle.await {
+            Ok(result) => {
+                match result {
+                    Ok(_) => {
+                        log::info!("Task completed successfully");
+                    }
+                    Err(e) => {
+                        log::info!("Error in task: {:?}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                log::info!("Error joining task: {:?}", e);
+            }
+        }
     }
-    send_notification().await.expect("Ошибка отправки сообщения с новыми заменами from replace str 134");
+
+
     let file_paths: Vec<&Path> = file_paths_arc.iter().map(|path_buf| path_buf.as_path()).collect();
     delete_files(&file_paths).await?;
+    let weight_from_memcached = get_from_memcached("Weight".to_string()).await;
+
+    match weight_from_memcached {
+        Ok(weight_string) => {
+            if weight_string == "Start".to_string() {
+                match write_on_memcached(length.to_string(), "Weight".to_string()).await {
+                    Ok(_) => {
+                        log::info!("Обнаружена начальная точка, вес {} записан в Memcached", length);
+                    }
+                    Err(e) => {
+                        log::error!("Ошибка записи веса замен в Memcached: {:?}", e);
+                        return Err(anyhow::anyhow!("Ошибка записи веса в Memcached").context(e));
+                    }
+                }
+                log::info!("Обнаружена начальная точка");
+                return Ok(());
+            }
+
+            match weight_string.parse::<i32>() {
+                Ok(weight) => {
+                    if length as i32 == weight {
+                        log::info!("Файлы не изменились");
+                        return Ok(());
+                    }
+                }
+                Err(e) => {
+                    log::error!("Ошибка парсинга веса из Memcached: {:?}", e);
+                    // Не возвращаем ошибку, так как это не критично
+                }
+            }
+        }
+        Err(e) => {
+            log::error!("Ошибка получения веса замен из Memcached: {:?}", e);
+            // Не возвращаем ошибку, так как это не критично
+        }
+    }
+    send_notification().await.expect("Ошибка отправки сообщения с новыми заменами from replace str 134");
     Ok(())
 }
 
@@ -248,10 +307,10 @@ async fn process_search(arr_url: Vec<Cow<'static, str>>, dates: Vec<String>) -> 
         let (date, link_result) = result.expect("Ошибка при получения нужного url");
         match link_result {
             Ok(link) => {
-                println!("Для даты {} найдена ссылка: {}", date, link);
+                log::info!("Для даты {} найдена ссылка: {}", date, link);
                 links.push(link);
             }
-            Err(e) => println!("Для даты {} не найдена ссылка: {}", date, e),
+            Err(e) => log::info!("Для даты {} не найдена ссылка: {}", date, e),
         }
     }
     Ok(links)
@@ -289,7 +348,7 @@ async fn process_download(links: Vec<String>) -> Result<Vec<PathBuf>> {
             match download_file(&url_clone, &file_path).await {
                 Ok(_) => Ok(vec![file_path]),
                 Err(e) => {
-                    println!("Ошибка загрузки файла: {} из {} ", url_clone, e);
+                    log::info!("Ошибка загрузки файла: {} из {} ", url_clone, e);
                     Err(anyhow!("Ошибка загрузки файла"))
                 }
             }
@@ -300,8 +359,8 @@ async fn process_download(links: Vec<String>) -> Result<Vec<PathBuf>> {
     for task_result in join_all(download_tasks).await {
         match task_result {
             Ok(Ok(file_paths)) => all_file_paths.extend(file_paths), // Добавляем пути в общий вектор
-            Ok(Err(e)) => println!("Ошибка в задаче: {}", e),
-            Err(e) => println!("Ошибка при join: {}", e),
+            Ok(Err(e)) => log::info!("Ошибка в задаче: {}", e),
+            Err(e) => log::info!("Ошибка при join: {}", e),
         }
     }
 
@@ -465,7 +524,7 @@ fn replacements(text: &str) -> String {
 
 async fn delete_file(path: &Path) -> Result<()> {
     if !path.exists() {
-        println!("Файл {} не существует", path.display());
+        log::info!("Файл {} не существует", path.display());
         return Ok(()); // Файл не существует, ничего не делаем
     }
 
@@ -475,7 +534,7 @@ async fn delete_file(path: &Path) -> Result<()> {
     }
     fs::remove_file(path)
         .with_context(|| format!("Ошибка при удалении файла {}", path.display()))?;
-    println!("Файл {} успешно удален", path.display());
+    log::info!("Файл {} успешно удален", path.display());
 
     Ok(())
 }

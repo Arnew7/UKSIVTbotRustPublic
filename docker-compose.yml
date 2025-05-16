@@ -1,7 +1,7 @@
 version: "3.8"
 services:
   uksivtbot:
-    image: arnew7/uksivtbotrust:v3.1.1
+    image: arnew7/uksivtbotrust:v3.1.3.4
     ports:
       - "8080:8080"
     environment:

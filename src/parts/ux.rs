@@ -152,7 +152,7 @@ pub async fn start_message_with_update(bot: Bot, chat_id: TeloxideChatId, messag
             start_message(bot, chat_id).await;
         }
         Err(err) => {
-            eprintln!("Ошибка при удалении сообщения {} в чате {}: {:?}", &message_id, &chat_id, err);
+            log::error!("Ошибка при удалении сообщения {} в чате {}: {:?}", &message_id, &chat_id, err);
             start_message(bot, chat_id.clone()).await;
             send_to_user_main("Ошибка при удалении сообщения".to_string(), chat_id.0).await.expect("Ошибка отправки сообщения об ошибки пользователь from ux str 157");
 
@@ -204,7 +204,7 @@ async fn handle_callback_query(bot: Bot, q: CallbackQuery, conn: Arc<Mutex<Conne
     if let Some(data) = &q.data {
 
         let chat_id: ChatId = q.message.as_ref().map(|m| m.chat.id).unwrap_or(q.from.id.into());
-        println!("{}", chat_id.0);
+        log::info!("{}", chat_id.0);
         let message_id = q.message.as_ref().map(|m| m.id).unwrap_or(MessageId(0));
 
         if data == "choice_setting_command"{
@@ -277,7 +277,7 @@ async fn handle_callback_query(bot: Bot, q: CallbackQuery, conn: Arc<Mutex<Conne
             let _ = DIRECTIONS.iter().find_map(|(y, dirs)| if dirs.contains(&direction_.to_string()) { Some(y) } else { None }).map_or("", |v| v);
 
             update_user_info(chat_id.0, group.to_string(), username, conn.clone()).await?;
-            println!("{}",&chat_id);
+            log::info!("{}",&chat_id);
 
             let group = get_group_by_chat_id(chat_id.0);
             let _ = get_from_memcached(group).await.unwrap();
@@ -285,7 +285,7 @@ async fn handle_callback_query(bot: Bot, q: CallbackQuery, conn: Arc<Mutex<Conne
 
             start_message_with_update(bot, chat_id, message_id).await;
 
-            println!("Message sending (UX)");
+            log::info!("Message sending (UX)");
 
 
 
@@ -423,12 +423,7 @@ async fn run() -> AsyncResult<()> {
     Ok(())
 }
 
-
-
-
 pub(crate) async fn start_ux() {
-    pretty_env_logger::init();
-    log::info!("Starting bot...");
     if let Err(err) = run().await {
         log::error!("Error running bot: {}", err);
     }

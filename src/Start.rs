@@ -3,8 +3,6 @@ use crate::parts::MyError;
 mod parts;
 mod Secret;
 
-
-
 use std::time::Duration;
 use futures::TryFutureExt;
 use tokio::{select, time, task};
@@ -15,11 +13,6 @@ use crate::parts::memcached::write_on_memcached;
 
 #[tokio::main]
 async fn main() {
-    // Инициализация начальной точки сравнения размера замен
-    write_on_memcached("Start".to_string(), "Weight".to_string()).await.expect("Ошибка инициализации начального веса замен");
-    tokio::time::sleep(Duration::from_secs(5)).await;
-    println!("Weight инициализирован");
-
     // Функция для запуска задачи с обработкой ошибок и перезапуском
     async fn run_with_restart<F>(mut task_fn: F, task_name: &str)
     where
@@ -27,6 +20,7 @@ async fn main() {
     {
         loop {
             println!("Запуск задачи: {}", task_name);
+            tokio::time::sleep(Duration::from_secs(15)).await; // Задержка перед запуском каждой задачи
             let task = task_fn();
             match task.await {
                 Ok(_) => {
@@ -68,9 +62,8 @@ async fn main() {
 
     // Ожидаем завершения всех задач
     let _ = db_task.await.expect("Ошибка при выполнении create_database");
-    let _ = ux_task.await.expect("Ошибка при выполнении UX");
     let _ = replace_task.await.expect("Ошибка при выполнении replacements_main");
-
+    let _ = ux_task.await.expect("Ошибка при выполнении UX");
 
     println!("Все задачи завершены");
 }

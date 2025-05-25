@@ -90,19 +90,17 @@ impl FromSql for DatabaseMessageId {
 #[derive(Debug)]
 pub struct User_Message_id {
     pub id: DatabaseChatId,
-    pub group: String,
     pub Message_id: DatabaseMessageId,
 }
 
-// Функция для получения списка User_Message_id из базы данных.
-pub fn get_user_and_group_and_message_id() -> Result<Vec<User_Message_id>, RusqliteError> {
+
+pub async fn get_user_and_message_id_by_group(group_inf: String) -> Result<Vec<User_Message_id>, RusqliteError> {
     let conn = Connection::open("Database.db")?;
-    let mut stmt = conn.prepare("SELECT chat_id, group_inf ,Message_id FROM info_users")?;
-    let user_iter = stmt.query_map([], |row| {
+    let mut stmt = conn.prepare("SELECT chat_id, Message_id FROM info_users WHERE group_inf = ?")?;
+    let user_iter = stmt.query_map([&group_inf], |row| {
         Ok(User_Message_id {
             id: row.get(0)?,
-            group: row.get(1)?,
-            Message_id: row.get(2)?,
+            Message_id: row.get(1)?,
         })
     })?;
 

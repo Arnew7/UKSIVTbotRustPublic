@@ -14,6 +14,7 @@ dependencies = [
  "lazy_static",
  "log",
  "memcache",
+ "once_cell",
  "pdf-extract",
  "pretty_env_logger",
  "regex",

@@ -1,5 +1,5 @@
-
 use super::memcached;
+
 use reqwest::{Client};
 use scraper::{Html, Selector};
 use tokio;
@@ -11,50 +11,20 @@ use tokio::io::AsyncReadExt;
 use tokio::task::JoinHandle;
 use futures::future::join_all;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Once};
-use tokio::sync::OnceCell;
-use tokio::time::{sleep};
+use std::sync::{Arc};
 use std::io::{self};
 use regex::Regex;
 use memcached::write_on_memcached;
 use pdf_extract;
 use std::fs;
-use std::time::Duration;
-use log::info;
 use crate::parts::time::{after_tomorrow, today, tomorrow};
-use sha2::{Digest};
-use crate::parts::Cycle::send_notification;
-use crate::parts::memcached::get_from_memcached;
+use crate::Secret::GROUPS_VEC;
 
 pub(crate) async fn replacements_main() -> Result<()> {
     //Все группы колледжа
-    let groups_vec: Vec<String> = vec![
-        "24укск-1", "24укск-2", "24са-1", "24са-2", "24п-1", "24п-2", "24п-3", "24п-4", "24п-5", "24веб-1", "24веб-2",
-        "24иис-1", "24оиб-1", "24оиб-2", "24з-1", "24з-2", "24э-1", "24э-2", "24ю-1", "24ю-2", "24ю-3", "24ю-4", "24пд-1",
-        "24пд-2", "24л-1", "24л-2", "24ул-1",
-        "23по-2", "23веб-1", "23веб-2", "23з-1", "23з-2", "23л-1", "23л-2", "23оиб-1", "23оиб-2",
-        "23п-1", "23п-2", "23п-3", "23п-4", "23п-5", "23п-6", "23пд-1", "23пд-2", "23по-1", "23по-2",
-        "23по-3", "23по-4", "23по-5", "23са-1", "23са-2", "23са-3", "23укск-1", "23ул-1", "23э-1",
-        "23э-2",
-        "22бд-1", "22веб-1", "22веб-2", "22зио-1", "22зио-2", "22ис-1", "22л-1", "22л-2",
-        "22оиб-1", "22оиб-2", "22п-1", "22п-2", "22п-3", "22пд-1", "22пд-2", "22по-1", "22по-2",
-        "22по-3", "22пса-1", "22пса-2", "22пса-3", "22са-1", "22са-2", "22укск-1", "22укск-2",
-        "22э-1", "22э-2",
-        "21бд-1", "21веб-1", "21веб-2", "21зио-1", "21зио-2", "21зио-3",
-        "21ис-1", "21л-1", "21л-2", "21оиб-1", "21оиб-2", "21оиб-3", "21п-1", "21п-2", "21п-3",
-        "21пд-1", "21пд-1", "21пд-2", "21пд-2", "21пд-3", "21пд-3", "21по-1", "21по-1",
-        "21по-2", "21по-2", "21по-3", "21по-4",
-        "21пса-1", "21пса-2", "21пса-3", "21пса-4", "21пса-6",
-        "21са-1",
-        "21са-2", "21са-2",
-        "21укск-1",
-        "21э-1",
-        "21э-2",
-    ].iter().map(|s| s.to_string()).collect();
-    let groups_arc_vector = Arc::new(groups_vec);
+    let groups_arc_vector = Arc::new(&GROUPS_VEC);
 
-
-    let day = today().await.to_string();
+    let day = "25.05".to_string();
 
     let day_y = tomorrow().await.to_string();
     let day_ay = after_tomorrow().await.to_string();
@@ -71,45 +41,22 @@ pub(crate) async fn replacements_main() -> Result<()> {
 
     let file_paths = process_download(r_links).await?;
     let vec_texts = read_and_process_files(&file_paths).await?;
-    let mut length :u32 = 0;
-
-    for i in &vec_texts {
-        length = length + i.len() as u32;
-    }
-
-
-    static START_WEIGHT_REPLACE_INIT: OnceCell<()> = OnceCell::const_new();
-
-    START_WEIGHT_REPLACE_INIT
-        .get_or_try_init(|| async {
-            write_on_memcached(length.to_string(), "Weight".to_string())
-                .await
-                .context("Ошибка инициализации начального веса замен")?;
-            sleep(Duration::from_secs(5)).await;
-            println!("Weight инициализирован");
-            Ok::<(), Error>(())
-        })
-        .await?;
-
-
 
     let vec_texts_arc = Arc::new(vec_texts);
     let file_paths_arc = Arc::new(file_paths);
 
     let mut handles = Vec::new();
 
-
-
     for group in groups_arc_vector.iter() {
+
         let vec_texts_clone = Arc::clone(&vec_texts_arc);
         let file_paths_clone = Arc::clone(&file_paths_arc);
         let groups_arc_vector_clone = Arc::clone(&groups_arc_vector);
         let group_clone = group.clone();
 
-
         let handle: JoinHandle<Result<(), String>> = tokio::spawn(async move {
-            // Получаем обработанный текст
-            let processed_text = finished(
+
+            let mut processed_text = finished(
                 &vec_texts_clone,
                 &file_paths_clone,
                 &groups_arc_vector_clone,
@@ -117,81 +64,30 @@ pub(crate) async fn replacements_main() -> Result<()> {
             )
                 .await;
 
+            // Проверяем длину текста
+            if processed_text.is_empty() {
+                processed_text = "Отсутствуют".to_string();
+            }
 
-            let mut processed_text_with_group = processed_text.clone();
-            processed_text_with_group.insert_str(0, "\n");
-            processed_text_with_group.insert_str(0, &group_clone);
+            // Добавляем название группы и перенос строки в начало
+            processed_text.insert_str(0, "\n");
+            processed_text.insert_str(0, &group_clone);
 
-            // Записываем результат в Memcached
-            write_on_memcached(processed_text_with_group, group_clone)
+            write_on_memcached(processed_text, group_clone)
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| e.to_string())?; // Convert error
 
             Ok(())
         });
         handles.push(handle);
-        // Отправляем обновление на главное меню
-
     }
 
     for handle in handles {
-        match handle.await {
-            Ok(result) => {
-                match result {
-                    Ok(_) => {
-                        log::info!("Task completed successfully");
-                    }
-                    Err(e) => {
-                        log::info!("Error in task: {:?}", e);
-                    }
-                }
-            }
-            Err(e) => {
-                log::info!("Error joining task: {:?}", e);
-            }
-        }
+        handle.await?;
     }
 
-
-    let file_paths: Vec<&Path> = file_paths_arc.iter().map(|path_buf| path_buf.as_path()).collect();
-    delete_files(&file_paths).await?;
-    let weight_from_memcached = get_from_memcached("Weight".to_string()).await;
-
-    match weight_from_memcached {
-        Ok(weight_string) => {
-            if weight_string == "Start".to_string() {
-                match write_on_memcached(length.to_string(), "Weight".to_string()).await {
-                    Ok(_) => {
-                        log::info!("Обнаружена начальная точка, вес {} записан в Memcached", length);
-                    }
-                    Err(e) => {
-                        log::error!("Ошибка записи веса замен в Memcached: {:?}", e);
-                        return Err(anyhow::anyhow!("Ошибка записи веса в Memcached").context(e));
-                    }
-                }
-                log::info!("Обнаружена начальная точка");
-                return Ok(());
-            }
-
-            match weight_string.parse::<i32>() {
-                Ok(weight) => {
-                    if length as i32 == weight {
-                        log::info!("Файлы не изменились");
-                        return Ok(());
-                    }
-                }
-                Err(e) => {
-                    log::error!("Ошибка парсинга веса из Memcached: {:?}", e);
-                    // Не возвращаем ошибку, так как это не критично
-                }
-            }
-        }
-        Err(e) => {
-            log::error!("Ошибка получения веса замен из Memcached: {:?}", e);
-            // Не возвращаем ошибку, так как это не критично
-        }
-    }
-    send_notification().await.expect("Ошибка отправки сообщения с новыми заменами from replace str 134");
+    //let file_paths: Vec<&Path> = file_paths_arc.iter().map(|path_buf| path_buf.as_path()).collect();
+    //delete_files(&file_paths).await?;
     Ok(())
 }
 
@@ -307,10 +203,10 @@ async fn process_search(arr_url: Vec<Cow<'static, str>>, dates: Vec<String>) -> 
         let (date, link_result) = result.expect("Ошибка при получения нужного url");
         match link_result {
             Ok(link) => {
-                log::info!("Для даты {} найдена ссылка: {}", date, link);
+                println!("Для даты {} найдена ссылка: {}", date, link);
                 links.push(link);
             }
-            Err(e) => log::info!("Для даты {} не найдена ссылка: {}", date, e),
+            Err(e) => println!("Для даты {} не найдена ссылка: {}", date, e),
         }
     }
     Ok(links)
@@ -348,7 +244,7 @@ async fn process_download(links: Vec<String>) -> Result<Vec<PathBuf>> {
             match download_file(&url_clone, &file_path).await {
                 Ok(_) => Ok(vec![file_path]),
                 Err(e) => {
-                    log::info!("Ошибка загрузки файла: {} из {} ", url_clone, e);
+                    println!("Ошибка загрузки файла: {} из {} ", url_clone, e);
                     Err(anyhow!("Ошибка загрузки файла"))
                 }
             }
@@ -359,8 +255,8 @@ async fn process_download(links: Vec<String>) -> Result<Vec<PathBuf>> {
     for task_result in join_all(download_tasks).await {
         match task_result {
             Ok(Ok(file_paths)) => all_file_paths.extend(file_paths), // Добавляем пути в общий вектор
-            Ok(Err(e)) => log::info!("Ошибка в задаче: {}", e),
-            Err(e) => log::info!("Ошибка при join: {}", e),
+            Ok(Err(e)) => println!("Ошибка в задаче: {}", e),
+            Err(e) => println!("Ошибка при join: {}", e),
         }
     }
 
@@ -476,6 +372,8 @@ fn extract_date(text: &str) -> Option<String> {
 }
 
 
+
+
 fn remove_l(text: &str, group: &str) -> String {
     if let Some(index) = text.find(group) {
         text[index..].replace(group, "")
@@ -502,6 +400,8 @@ fn indexing(text: &str, groups: &Vec<String>) -> String {
 }
 
 
+
+
 fn replacements(text: &str) -> String {
     const ABSENT_STRING: &str = "отсутствуют";
     const PRACTICE_STRING: &str = "-на практике";
@@ -524,7 +424,7 @@ fn replacements(text: &str) -> String {
 
 async fn delete_file(path: &Path) -> Result<()> {
     if !path.exists() {
-        log::info!("Файл {} не существует", path.display());
+        println!("Файл {} не существует", path.display());
         return Ok(()); // Файл не существует, ничего не делаем
     }
 
@@ -534,7 +434,7 @@ async fn delete_file(path: &Path) -> Result<()> {
     }
     fs::remove_file(path)
         .with_context(|| format!("Ошибка при удалении файла {}", path.display()))?;
-    log::info!("Файл {} успешно удален", path.display());
+    println!("Файл {} успешно удален", path.display());
 
     Ok(())
 }

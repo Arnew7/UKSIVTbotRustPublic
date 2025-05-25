@@ -10,10 +10,19 @@ use tokio::time::sleep;
 use tracing::subscriber::set_global_default;
 
 use crate::parts::memcached::write_on_memcached;
+use crate::Secret::GROUPS_VEC;
 
 #[tokio::main]
 async fn main() {
     // Функция для запуска задачи с обработкой ошибок и перезапуском
+    // Инициализация начального веса замен
+    for group in GROUPS_VEC.iter() {
+        let key = format!("{}_weight", group);
+        let value = "0".to_string();
+
+
+        write_on_memcached(value, key).await.expect("Connection to Memcached is unavailable");
+    }
     async fn run_with_restart<F>(mut task_fn: F, task_name: &str)
     where
         F: FnMut() -> task::JoinHandle<()> + Send + 'static,

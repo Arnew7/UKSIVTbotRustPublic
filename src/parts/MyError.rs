@@ -1,8 +1,8 @@
-// src/parts/MyError.rs
 use std::error::Error as StdError;
 use std::string::FromUtf8Error;
 use memcache::Error as MemcacheError;
 use rusqlite::Error as RusqliteError;
+use tokio::task::JoinError;
 
 #[derive(Debug)]
 pub enum MyError {
@@ -12,6 +12,7 @@ pub enum MyError {
     GenericError(String),
     Other(Box<dyn std::error::Error>),
     Rusqlite(RusqliteError),
+    Join(JoinError),
     Addbook(AddbookError),
 }
 
@@ -23,9 +24,10 @@ impl std::fmt::Display for MyError {
             MyError::Utf8Error(e) => write!(f, "UTF-8 error: {}", e),
             MyError::NotFoundError(e) => write!(f, "Not found error: {}", e),
             MyError::GenericError(e) => write!(f, "Generic error: {}", e),
-            MyError::Rusqlite(e) => write!(f, "Rusqlite error: {}", e), // Corrected typo
+            MyError::Rusqlite(e) => write!(f, "Rusqlite error: {}", e),
             MyError::Other(e) => write!(f, "Other error: {}", e),
-            MyError::Addbook(e) => write!(f, "Addbook error: {}", e), // Corrected typo and message
+            MyError::Addbook(e) => write!(f, "Addbook error: {}", e),
+            MyError::Join(e) => write!(f, "Join error: {}", e),
         }
     }
 }
@@ -44,12 +46,17 @@ impl From<Box<dyn std::error::Error>> for MyError {
     }
 }
 
-// Remove this From implementation as AddbookError does not implement Error
-// impl From<AddbookError> for MyError {
-//     fn from(e: AddbookError) -> Self {
-//         MyError::Addbook(e)
-//     }
-// }
+impl From<JoinError> for MyError {
+    fn from(e: JoinError) -> Self {
+        MyError::Join(e)
+    }
+}
+
+ impl From<AddbookError> for MyError {
+     fn from(e: AddbookError) -> Self {
+         MyError::Addbook(e)
+     }
+ }
 
 impl From<FromUtf8Error> for MyError {
     fn from(err: FromUtf8Error) -> Self {

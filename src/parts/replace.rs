@@ -24,7 +24,7 @@ pub(crate) async fn replacements_main() -> Result<()> {
     //Все группы колледжа
     let groups_arc_vector = Arc::new(&GROUPS_VEC);
 
-    let day = "25.05".to_string();
+    let day = today().await.to_string();
 
     let day_y = tomorrow().await.to_string();
     let day_ay = after_tomorrow().await.to_string();
@@ -75,7 +75,7 @@ pub(crate) async fn replacements_main() -> Result<()> {
 
             write_on_memcached(processed_text, group_clone)
                 .await
-                .map_err(|e| e.to_string())?; // Convert error
+                .map_err(|e| e.to_string())?;
 
             Ok(())
         });
@@ -86,8 +86,8 @@ pub(crate) async fn replacements_main() -> Result<()> {
         handle.await?;
     }
 
-    //let file_paths: Vec<&Path> = file_paths_arc.iter().map(|path_buf| path_buf.as_path()).collect();
-    //delete_files(&file_paths).await?;
+    let file_paths: Vec<&Path> = file_paths_arc.iter().map(|path_buf| path_buf.as_path()).collect();
+    delete_files(&file_paths).await?;
     Ok(())
 }
 
@@ -349,7 +349,7 @@ fn last_check (text: &String) -> String {
 
 
 fn process_text(text: &str) -> String {
-    let pattern = Regex::new(r"(21|22|23|24|25)\s*([а-яА-Я]+|[-–]\d+)\s*-?\s*(\d)").unwrap();
+    let pattern = Regex::new(r"(21|22|23|24|25)\s*([а-яА-Я]+|[-–]\d+)\s*-?\s*(\d)").expect("ERR from replace.rs STR 352");
     let replacement = "$1$2-$3";
 
     let lines: Vec<&str> = text.split('\n').collect();
@@ -366,7 +366,7 @@ fn process_text(text: &str) -> String {
 
 
 fn extract_date(text: &str) -> Option<String> {
-    let re = Regex::new(r"НА (\d{1,2} [А-Яа-я]+(?: – [А-Яа-я]+)?)").unwrap();
+    let re = Regex::new(r"НА (\d{1,2} [А-Яа-я]+(?: – [А-Яа-я]+)?)").expect("ERR from replace.rs STR 369");;
     re.captures(text)
         .and_then(|cap| cap.get(1).map(|m| m.as_str().to_string()))
 }

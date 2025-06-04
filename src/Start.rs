@@ -1,6 +1,10 @@
 mod parts;
 
 mod Secret;
+
+use std::env;
+use std::fs::{File, OpenOptions};
+use std::io::ErrorKind;
 use std::time::Duration;
 use teloxide::Bot;
 use tokio::{select, task, time};
@@ -12,6 +16,34 @@ use crate::Secret::{MEMCACHED_PRODUCTION_ADDRESS, GROUPS_VEC};
 
 #[tokio::main]
 async fn main() {
+
+    let current_dir = env::current_dir();
+    println!("Current working directory: {:?}", current_dir);
+
+    let file_name = "Database.db";
+
+
+    let result = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(file_name); // Пытаемся открыть/создать файл
+
+    match result {
+        Ok(_) => {
+
+            println!("Файл '{}' успешно создан.", file_name);
+        }
+        Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
+
+            println!("Файл '{}' уже существует. Создание пропущено.", file_name);
+        }
+        Err(e) => {
+
+            eprintln!("Не удалось создать файл '{}': {}", file_name, e);
+        }
+    }
+
+
     // Инициализируем БД пул один раз
     parts::db::db_pool::init_db()
         .await

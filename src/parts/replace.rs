@@ -1,5 +1,4 @@
-use super::memcached;
-
+use super::{cache};
 use reqwest::{Client};
 use scraper::{Html, Selector};
 use tokio;
@@ -14,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc};
 use std::io::{self};
 use regex::Regex;
-use memcached::write_on_memcached;
+use crate::parts::cache::{CacheInterface};
 use pdf_extract;
 use std::fs;
 use crate::parts::time::{after_tomorrow, today, tomorrow};
@@ -23,7 +22,6 @@ use crate::Secret::GROUPS_VEC;
 pub(crate) async fn replacements_main() -> Result<()> {
     //Все группы колледжа
     let groups_arc_vector = Arc::new(&GROUPS_VEC);
-
     let day = today().await.to_string();
 
     let day_y = tomorrow().await.to_string();
@@ -55,7 +53,7 @@ pub(crate) async fn replacements_main() -> Result<()> {
         let group_clone = group.clone();
 
         let handle: JoinHandle<Result<(), String>> = tokio::spawn(async move {
-
+            let cache = cache::MemcachedCache::new();
             let mut processed_text = finished(
                 &vec_texts_clone,
                 &file_paths_clone,
@@ -73,7 +71,7 @@ pub(crate) async fn replacements_main() -> Result<()> {
             processed_text.insert_str(0, "\n");
             processed_text.insert_str(0, &group_clone);
 
-            write_on_memcached(processed_text, group_clone)
+            cache.set(&group_clone, &processed_text.as_bytes(), 0)
                 .await
                 .map_err(|e| e.to_string())?;
 
@@ -83,7 +81,7 @@ pub(crate) async fn replacements_main() -> Result<()> {
     }
 
     for handle in handles {
-        handle.await?;
+        let _ = handle.await?;
     }
 
     let file_paths: Vec<&Path> = file_paths_arc.iter().map(|path_buf| path_buf.as_path()).collect();
@@ -366,7 +364,7 @@ fn process_text(text: &str) -> String {
 
 
 fn extract_date(text: &str) -> Option<String> {
-    let re = Regex::new(r"НА (\d{1,2} [А-Яа-я]+(?: – [А-Яа-я]+)?)").expect("ERR from replace.rs STR 369");;
+    let re = Regex::new(r"НА (\d{1,2} [А-Яа-я]+(?: – [А-Яа-я]+)?)").expect("ERR from replace.rs STR 369");
     re.captures(text)
         .and_then(|cap| cap.get(1).map(|m| m.as_str().to_string()))
 }

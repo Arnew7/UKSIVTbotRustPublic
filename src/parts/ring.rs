@@ -1,8 +1,6 @@
-
 use chrono::{DateTime, Datelike, Duration, Local, NaiveTime, TimeZone, Weekday};
 use std::collections::HashMap;
 
-// Типы для расписания
 type DaySchedule = HashMap<u32, LessonTime>;
 type Schedule = HashMap<u32, DaySchedule>;
 
@@ -44,6 +42,18 @@ fn get_hardcoded_schedule() -> (Schedule, DaySchedule, Schedule, DaySchedule) {
 
 fn create_schedule(times: Vec<(u32, u32, u32)>) -> DaySchedule {
     times.into_iter().map(|(n, h, m)| (n, LessonTime::new(h, m))).collect()
+}
+
+fn pluralize(n: u64, one: &str, few: &str, many: &str) -> String {
+    let n_mod10 = n % 10;
+    let n_mod100 = n % 100;
+    if n_mod10 == 1 && n_mod100 != 11 {
+        one.to_string()
+    } else if (2..=4).contains(&n_mod10) && !(12..=14).contains(&n_mod100) {
+        few.to_string()
+    } else {
+        many.to_string()
+    }
 }
 
 async fn calculate_time_delta(lesson_time: LessonTime, current_day: chrono::Date<Local>) -> Result<(u64, u64), String> {
@@ -92,13 +102,16 @@ pub async fn get_time_delta(n_lesson: u32) -> Result<String, String> {
             match calculate_time_delta(pair_time, today).await {
                 Ok((hours, minutes)) => {
                     results.push(format!(
-                        "{}: До начала {}-й пары осталось: {} часов и {} минут.",
-                        schedule_type, n_lesson, hours, minutes
+                        "{}: До начала {}-й пары осталось: {} {} и {} {}.",
+                        schedule_type,
+                        n_lesson,
+                        hours, pluralize(hours, "час", "часа", "часов"),
+                        minutes, pluralize(minutes, "минута", "минуты", "минут")
                     ));
                 }
                 Err(_) => {
                     results.push(format!(
-                        "{}: {} пара уже прошла или идёт.",
+                        "{}: {}-я пара уже прошла или идёт.",
                         schedule_type, n_lesson
                     ));
                 }
@@ -120,9 +133,8 @@ pub async fn get_next_lesson() -> Result<Vec<String>, String> {
     let mut current_day = today;
     let mut weekday_num = current_day.weekday().number_from_monday();
 
-    // Если воскресенье, переходим на понедельник
     if current_day.weekday() == Weekday::Sun {
-        current_day = today.succ(); // Переходим на понедельник
+        current_day = today.succ();
         weekday_num = Weekday::Mon.number_from_monday();
     }
 
@@ -132,7 +144,6 @@ pub async fn get_next_lesson() -> Result<Vec<String>, String> {
     let now = Local::now().time();
     let mut results = vec![];
 
-    // Поиск следующей пары для текущего дня
     let next_lesson_with_lunch = find_next_lesson(ring_with_lunch, now);
     let next_lesson_without_lunch = find_next_lesson(ring_without_lunch, now);
 
@@ -142,12 +153,14 @@ pub async fn get_next_lesson() -> Result<Vec<String>, String> {
                 match calculate_time_delta(lesson_time_with, current_day).await {
                     Ok((hours, minutes)) => {
                         results.push(format!(
-                            "До начала {}-й пары осталось: {} часов и {} минут.",
-                            lesson_num_with, hours, minutes
+                            "До начала {}-й пары осталось: {} {} и {} {}.",
+                            lesson_num_with,
+                            hours, pluralize(hours, "час", "часа", "часов"),
+                            minutes, pluralize(minutes, "минута", "минуты", "минут")
                         ));
                     }
                     Err(e) => {
-                        results.push(format!("{} пара уже прошла или идёт: {}", lesson_num_with, e));
+                        results.push(format!("{}-я пара уже прошла или идёт: {}", lesson_num_with, e));
                     }
                 }
             } else {
@@ -162,7 +175,6 @@ pub async fn get_next_lesson() -> Result<Vec<String>, String> {
             process_lesson_time("Без обеда", lesson_num, lesson_time, current_day, &mut results).await;
         }
         (None, None) => {
-            // Если уроков больше нет, ищем первый урок следующего дня
             let next_day = find_next_working_day(current_day);
             let next_weekday_num = next_day.weekday().number_from_monday();
 
@@ -201,12 +213,15 @@ async fn process_lesson_time(
     match calculate_time_delta(lesson_time, current_day).await {
         Ok((hours, minutes)) => {
             results.push(format!(
-                "{}: До начала {}-й пары осталось: {} часов и {} минут.",
-                schedule_type, lesson_num, hours, minutes
+                "{}: До начала {}-й пары осталось: {} {} и {} {}.",
+                schedule_type,
+                lesson_num,
+                hours, pluralize(hours, "час", "часа", "часов"),
+                minutes, pluralize(minutes, "минута", "минуты", "минут")
             ));
         }
         Err(e) => {
-            results.push(format!("{}: {} пара уже прошла или идёт: {}", schedule_type, lesson_num, e));
+            results.push(format!("{}: {}-я пара уже прошла или идёт: {}", schedule_type, lesson_num, e));
         }
     }
 }
@@ -229,12 +244,13 @@ async fn find_first_lesson(
         let now = Local::now();
         let next_lesson_datetime = lesson_time.to_datetime(next_day).unwrap();
         let duration = next_lesson_datetime.signed_duration_since(now);
-        let hours = duration.num_hours();
-        let minutes = (duration.num_minutes() % 60).abs();
+        let hours = duration.num_hours() as u64;
+        let minutes = (duration.num_minutes() % 60).abs() as u64;
 
         results.push(format!(
-            "Завтра: Первая пара {} через {} ч {} мин.",
-            lesson_num, hours, minutes
+            "Завтра: Первая пара через {} {} {} {}.",
+            hours, pluralize(hours, "час", "часа", "часов"),
+            minutes, pluralize(minutes, "минута", "минуты", "минут")
         ));
     }
 }

@@ -13,9 +13,45 @@ use futures::TryFutureExt;
 use crate::parts::cache;
 use crate::parts::cache::CacheInterface;
 use crate::Secret::{MEMCACHED_PRODUCTION_ADDRESS, GROUPS_VEC};
+use chrono::NaiveDate;
+use parts::excel::models::Student;
+use parts::excel::config::ReportHeader;
+use parts::excel::excel_report::{AttendanceBook, ExcelExporter};
+use parts::excel::traits::AttendanceApi;
+use parts::excel::report_manager::ReportManager;
+
+fn april_days(year: i32) -> Vec<NaiveDate> {
+    (1..=30).map(|d| NaiveDate::from_ymd_opt(year, 4, d).unwrap()).collect()
+}
 
 #[tokio::main]
 async fn main() {
+
+    let header = ReportHeader {
+        group: "23ВЕБ-1".to_string(),
+        curator: "Бокарёва С.Ф".to_string(),
+        starosta: "Шестаков А.Д".to_string(),
+        month_label: "Август".to_string(),
+        academic_year: "2025-2026".to_string(),
+    };
+
+    let days = (1..=30)
+        .map(|d| NaiveDate::from_ymd_opt(2025, 9, d).unwrap())
+        .collect::<Vec<_>>();
+
+    let mut manager = ReportManager::open_or_create("23ВЕБ-1 август", header, days)
+        .expect("Не удалось открыть или создать отчет");
+
+    manager.add_student(Student {
+        name: "Петров П.П.".to_string(),
+        hours_by_date: Default::default(),
+        excused_by_date: Default::default(),
+    });
+
+    manager.save().expect("Не удалось сохранить отчет"); // Перезаписать Excel
+
+    println!("Готово: файл «посещаемость.xlsx» создан.");
+
 
     let current_dir = env::current_dir();
     println!("Current working directory: {:?}", current_dir);

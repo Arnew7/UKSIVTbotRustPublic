@@ -8,7 +8,7 @@ use std::sync::Mutex;
 use teloxide::{prelude::*, utils::command::BotCommands,
                types::{CallbackQuery, Message as TeloxideMessage, Update, ChatId as TeloxideChatId,
                        MessageId as TeloxideMessageId}, dispatching::UpdateFilterExt}; // Импортируем и переименовываем teloxide::types::Message
-use std::collections::HashMap;
+use indexmap::IndexMap;
 use anyhow::Context;
 use chrono::{NaiveDateTime, Timelike};
 use teloxide::payloads::SendMessageSetters;
@@ -36,16 +36,16 @@ enum Command {
 
 
 lazy_static::lazy_static! {
-    static ref YEARS: HashMap<String, Vec<String>> = {
-        let mut map = HashMap::new();
+    static ref YEARS: IndexMap<String, Vec<String>> = {
+        let mut map = IndexMap::new();
         map.insert("YEARS".to_string(), vec!["2024".to_string(),"2023".to_string(),"2022".to_string(),"2021".to_string(), ]);
 
 
 
         map
     };
-    static ref DIRECTIONS: HashMap<String, Vec<String>> = {
-        let mut map = HashMap::new();
+    static ref DIRECTIONS: IndexMap<String, Vec<String>> = {
+        let mut map = IndexMap::new();
         map.insert("2024".to_string(), vec!["24ВЕБ".to_string(),"24З".to_string(), "24ИИС".to_string(),
                              "24Л".to_string(), "24ОИБ".to_string(),"24П".to_string(),
                              "24ПД".to_string(),"24СА".to_string(),"24уКСК".to_string(),
@@ -71,8 +71,8 @@ lazy_static::lazy_static! {
         map
 
     };
-     static ref GROUPS: HashMap<String, Vec<String>> = {
-        let mut map = HashMap::new();
+     static ref GROUPS: IndexMap<String, Vec<String>> = {
+        let mut map = IndexMap::new();
         map.insert("24уКСК".to_string(), vec!["24УКСК-1".to_string(), "24УКСК-2".to_string()]);
         map.insert("24СА".to_string(), vec!["24СА-1".to_string(), "24СА-2".to_string(), "24СА-3".to_string()]);
         map.insert("24П".to_string(), vec!["24П-1".to_string(), "24П-2".to_string(), "24П-3".to_string(), "24П-4".to_string(), "24П-5".to_string()]);
@@ -109,38 +109,76 @@ lazy_static::lazy_static! {
         map.insert("22СА".to_string(), vec!["22СА-1".to_string(), "22СА-2".to_string()]);
         map.insert("22уКСК".to_string(), vec!["22УКСК-1".to_string(), "22УКСК-2".to_string()]);
         map.insert("22Э".to_string(), vec!["22Э-1".to_string(), "22Э-2".to_string()]);
-       map.insert("21БД".to_string(), vec!["21БД-1".to_string()]);
-        map.insert("21ВЕБ".to_string(), vec!["21ВЕБ-1".to_string(), "21ВЕБ-2".to_string()]);
-        map.insert("21ЗИО".to_string(), vec!["21ЗИО-1".to_string(), "21ЗИО-2".to_string(), "21ЗИО-3".to_string()]);
-        map.insert("21ИС".to_string(), vec!["21ИС-1".to_string()]);
-        map.insert("21Л".to_string(), vec!["21Л-1".to_string(), "21Л-2".to_string()]);
-        map.insert("21ОИБ".to_string(), vec!["21ОИБ-1".to_string(), "21ОИБ-2".to_string(), "21ОИБ-3".to_string()]);
-        map.insert("21П".to_string(), vec!["21П-1".to_string(), "21П-2".to_string(), "21П-3".to_string()]);
-        map.insert("21ПД".to_string(), vec!["21ПД-1".to_string(), "21ПД-2".to_string(), "21ПД-3".to_string()]);
-        map.insert("21ПО".to_string(), vec!["21ПО-1".to_string(), "21ПО-2".to_string(), "21ПО-3".to_string(), "21ПО-4".to_string()]);
-        map.insert("21ПСА".to_string(), vec!["21ПСА-1".to_string(), "21ПСА-2".to_string(), "21ПСА-3".to_string(), "21ПСА-4".to_string(), "21ПСА-6".to_string()]);
-        map.insert("21СА".to_string(), vec!["21СА-1".to_string(), "21СА-2".to_string()]);
-        map.insert("21уКСК".to_string(), vec!["21УКСК-1".to_string()]);
-        map.insert("21Э".to_string(), vec!["21Э-1".to_string(), "21Э-2".to_string()]);
         map
     };
-     static ref REPLACE_OPTIONS: HashMap<&'static str, &'static str> = {
-        let mut m = HashMap::new();
+     static ref REPLACE_OPTIONS: IndexMap<&'static str, &'static str> = {
+        let mut m = IndexMap::new();
         m.insert("Изменить группу", "change_group_replace");
         m
     };
 
-           static ref MAIN: HashMap<&'static str, &'static str> = {
-        let mut m = HashMap::new();
+           static ref MAIN_STATOSTA: IndexMap<&'static str, &'static str> = {
+                let mut m = IndexMap::new();
+                m.insert("Настройки", "choice_setting_command");
+                m.insert("Обновить", "get_replace");
+                m.insert("До N-Пары", "get_time_to_N_lesson");
+                m
+    };
+
+               static ref MAIN: IndexMap<&'static str, &'static str> = {
+        let mut m = IndexMap::new();
         m.insert("Настройки", "choice_setting_command");
         m.insert("Обновить", "get_replace");
+        m.insert("Отчет", "excel_report");
         m.insert("До N-Пары", "get_time_to_N_lesson");
         m
+    };
 
+                   static ref EXCEL_REPORT: IndexMap<&'static str, &'static str> = {
+        let mut m = IndexMap::new();
+        m.insert("+Студент", "add_student");
+        m.insert("Добавить часы", "add_time");
+        m.insert("Убрать часы", "add_time");
+        m.insert("Сброс отчета", "drop_report");
+        m
+    };
+
+                  static ref ADD_HOURS: IndexMap<&'static str, &'static str> = {
+        let mut m = IndexMap::new();
+        m.insert("2", "2");
+        m.insert("4", "4");
+        m.insert("6", "6");
+        m.insert("8", "8");
+        m.insert("10", "10");
+        m
+    };
+
+                      static ref REMOVE_HOURS: IndexMap<&'static str, &'static str> = {
+        let mut m = IndexMap::new();
+        m.insert("-2", "-2");
+        m.insert("-4", "-4");
+        m.insert("-6", "-6");
+        m.insert("-8", "-8");
+        m.insert("-10", "-10");
+        m
+    };
+
+                       static ref YES_OR_NOT: IndexMap<&'static str, &'static str> = {
+        let mut m = IndexMap::new();
+        m.insert("Да", "yes");
+        m.insert("Нет", "no");
+        m
     };
 
 
+                           static ref REJECT: IndexMap<&'static str, &'static str> = {
+        let mut m = IndexMap::new();
+        m.insert("Отмена", "Reject");
+        m
+    };
+
 }
+
 
 // Асинхронная функция для отправки стартового сообщения с обновлением.
 pub async fn start_message_with_update(bot: Bot, chat_id: TeloxideChatId, message_id: TeloxideMessageId) {
@@ -245,6 +283,46 @@ async fn handle_callback_query(bot: Bot, q: CallbackQuery) -> AsyncResult<()> {
                 bot.edit_message_text(chat_id, message_id, "Настройки")
                     .reply_markup(keyboard)
                     .await?;
+            }
+
+            "excel_report" => {
+                let keyboard = create_inline_keyboard_with_back(
+                    EXCEL_REPORT.iter().map(|(text, callback)| (text.to_string(), callback.to_string())).collect(),
+                    "back_to_main".to_string()
+                );
+                bot.edit_message_text(chat_id, message_id, "Панель отчета:")
+                    .reply_markup(keyboard)
+                    .await?;
+            }
+
+            "add_student" => {
+                bot.edit_message_text(chat_id, message_id, "Напишите ФИО студента")
+                    .await?;
+            }
+
+            "add_time" => {
+                let keyboard = create_inline_keyboard_with_back(
+                    ADD_HOURS.iter().map(|(text, callback)| (text.to_string(), callback.to_string())).collect(),
+                    "back_to_main".to_string()
+                );
+                bot.edit_message_text(chat_id, message_id, "Сколько часов добавить")
+                    .reply_markup(keyboard)
+                    .await?;
+            }
+
+            "remove_time" => {
+                let keyboard = create_inline_keyboard_with_back(
+                    REMOVE_HOURS.iter().map(|(text, callback)| (text.to_string(), callback.to_string())).collect(),
+                    "back_to_main".to_string()
+                );
+                bot.edit_message_text(chat_id, message_id, "Сколько часов убрать")
+                    .reply_markup(keyboard)
+                    .await?;
+            }
+
+                "drop_report" => {
+            bot.edit_message_text(chat_id, message_id, "Отчет сброшен")
+            .await?;
             }
 
             "get_time_to_N_lesson" => {

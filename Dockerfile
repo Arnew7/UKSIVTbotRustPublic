@@ -33,13 +33,15 @@ COPY src ./src
 # Собираем проект без специфики архитектуры
 RUN cargo build --release --target aarch64-unknown-linux-gnu
 # Кросс-компиляция для целевой архитектуры - закомментирована
-#RUN cargo build --release
+
+
+# Запустите сборку
 #RUN cargo build --release
 # Просматриваем содержимое директории релизов
 RUN ls -la /usr/src/app/target/aarch64-unknown-linux-gnu/release/
 # Просматриваем содержимое target для aarch64 - закомментировано
 #RUN ls -la /usr/src/app/target/release/
-#RUN ls -la /usr/src/app/target/release/
+
 # Этап исполнения для aarch64
 FROM ubuntu:22.04 as runner
 ENV DEBIAN_FRONTEND=noninteractive
